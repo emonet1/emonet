@@ -1,5 +1,5 @@
 // 全局常量
-const CURRENT_TIME = '2025-07-30 09:19:03';
+const CURRENT_TIME = '2025-07-30 09:28:13';
 const CURRENT_USER = 'jingtianwei2002';
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123';
@@ -57,30 +57,29 @@ function clearError(elementId) {
     }
 }
 
-// 强化的数据清理函数 - 彻底解决嵌套数组问题
-function deepSanitizeForFirestore(data, depth = 0) {
-    // 防止无限递归
-    if (depth > 10) {
-        console.warn('数据结构过深，转换为字符串:', data);
-        return String(data);
-    }
+// 完全扁平化的数据处理函数 - 彻底解决嵌套数组问题
+function totallyFlattenData(data) {
+    console.log('开始完全扁平化处理:', typeof data, data);
     
     // 处理 null 和 undefined
     if (data === null || data === undefined) {
-        return null;
+        return '';
     }
     
     // 处理基本类型
-    if (typeof data === 'string' || typeof data === 'boolean') {
+    if (typeof data === 'string') {
         return data;
     }
     
-    // 处理数字
     if (typeof data === 'number') {
         if (isNaN(data) || !isFinite(data)) {
-            return String(data);
+            return '';
         }
         return data;
+    }
+    
+    if (typeof data === 'boolean') {
+        return data.toString();
     }
     
     // 处理日期
@@ -88,128 +87,123 @@ function deepSanitizeForFirestore(data, depth = 0) {
         return data.toISOString();
     }
     
-    // 处理数组 - 这是关键部分
-    if (Array.isArray(data)) {
-        const sanitizedArray = [];
-        for (let i = 0; i < data.length; i++) {
-            const item = data[i];
-            
-            // 如果数组元素也是数组，将其转换为字符串
-            if (Array.isArray(item)) {
-                sanitizedArray.push(JSON.stringify(item));
-            } else if (item && typeof item === 'object') {
-                // 如果是对象，递归处理但转换为字符串以避免复杂结构
-                sanitizedArray.push(JSON.stringify(deepSanitizeForFirestore(item, depth + 1)));
-            } else {
-                // 基本类型直接处理
-                sanitizedArray.push(deepSanitizeForFirestore(item, depth + 1));
-            }
+    // 关键：将任何数组或对象都转换为字符串
+    if (Array.isArray(data) || (typeof data === 'object' && data !== null)) {
+        try {
+            return JSON.stringify(data);
+        } catch (error) {
+            console.warn('JSON序列化失败，转换为字符串:', error);
+            return String(data);
         }
-        return sanitizedArray;
-    }
-    
-    // 处理对象
-    if (typeof data === 'object' && data !== null) {
-        const sanitizedObject = {};
-        for (const [key, value] of Object.entries(data)) {
-            const sanitizedKey = String(key).replace(/[.#$\/\[\]]/g, '_');
-            sanitizedObject[sanitizedKey] = deepSanitizeForFirestore(value, depth + 1);
-        }
-        return sanitizedObject;
     }
     
     // 其他情况转换为字符串
     return String(data);
 }
 
-// 验证数据是否包含嵌套数组
-function validateFirestoreData(data, path = '') {
-    if (Array.isArray(data)) {
-        for (let i = 0; i < data.length; i++) {
-            const item = data[i];
-            if (Array.isArray(item)) {
-                console.error(`发现嵌套数组在路径: ${path}[${i}]`, item);
-                return false;
-            }
-            if (typeof item === 'object' && item !== null) {
-                if (!validateFirestoreData(item, `${path}[${i}]`)) {
-                    return false;
-                }
-            }
-        }
-    } else if (typeof data === 'object' && data !== null) {
-        for (const [key, value] of Object.entries(data)) {
-            if (!validateFirestoreData(value, `${path}.${key}`)) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-// 专门处理Excel数据的函数
+// 专门处理Excel数据的函数 - 确保零嵌套
 function processExcelDataForFirestore(excelData) {
     console.log('开始处理Excel数据，原始数据结构:', excelData);
     
-    // 处理headers
-    const sanitizedHeaders = excelData.headers.map(header => {
-        if (header === null || header === undefined || header === '') {
-            return '未命名列';
+    // 处理headers - 确保全部是字符串
+    const sanitizedHeaders = [];
+    if (Array.isArray(excelData.headers)) {
+        for (let i = 0; i < excelData.headers.length; i++) {
+            const header = excelData.headers[i];
+            if (header === null || header === undefined || header === '') {
+                sanitizedHeaders.push(`列${i + 1}`);
+            } else {
+                sanitizedHeaders.push(String(header));
+            }
         }
-        return String(header);
-    });
+    }
     
-    // 处理rows - 关键步骤
-    const sanitizedRows = excelData.rows.map((row, rowIndex) => {
-        if (!Array.isArray(row)) {
-            console.warn(`第${rowIndex}行不是数组:`, row);
-            return [];
-        }
-        
-        return row.map((cell, cellIndex) => {
-            // 如果单元格是数组，直接转换为字符串
-            if (Array.isArray(cell)) {
-                console.log(`发现数组单元格在第${rowIndex}行第${cellIndex}列:`, cell);
-                return JSON.stringify(cell);
-            }
+    // 处理rows - 确保每个单元格都是基本类型
+    const sanitizedRows = [];
+    if (Array.isArray(excelData.rows)) {
+        for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
+            const row = excelData.rows[rowIndex];
+            const sanitizedRow = [];
             
-            // 如果是对象，转换为字符串
-            if (cell && typeof cell === 'object') {
-                return JSON.stringify(cell);
-            }
-            
-            // 处理null/undefined
-            if (cell === null || cell === undefined) {
-                return '';
-            }
-            
-            // 处理数字
-            if (typeof cell === 'number') {
-                if (isNaN(cell) || !isFinite(cell)) {
-                    return String(cell);
+            if (Array.isArray(row)) {
+                // 确保行长度与headers一致
+                for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                    const cell = row[colIndex];
+                    const flattenedCell = totallyFlattenData(cell);
+                    sanitizedRow.push(flattenedCell);
+                    
+                    console.log(`处理单元格[${rowIndex}][${colIndex}]:`, typeof cell, '=>', typeof flattenedCell, flattenedCell);
                 }
-                return cell;
+            } else {
+                // 如果行不是数组，创建空行
+                for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                    sanitizedRow.push('');
+                }
             }
             
-            // 其他情况转换为字符串
-            return String(cell);
-        });
-    });
+            sanitizedRows.push(sanitizedRow);
+        }
+    }
     
     const processedData = {
-        fileName: String(excelData.fileName),
+        fileName: String(excelData.fileName || '未知文件'),
         headers: sanitizedHeaders,
         rows: sanitizedRows
     };
     
-    console.log('处理后的数据结构:', {
-        fileName: processedData.fileName,
+    console.log('处理后的数据结构验证:', {
+        fileName: typeof processedData.fileName,
+        headersType: typeof processedData.headers,
         headersLength: processedData.headers.length,
+        headersIsArray: Array.isArray(processedData.headers),
+        rowsType: typeof processedData.rows,
         rowsLength: processedData.rows.length,
-        firstRowSample: processedData.rows[0]
+        rowsIsArray: Array.isArray(processedData.rows),
+        firstRowType: processedData.rows[0] ? typeof processedData.rows[0] : 'undefined',
+        firstRowIsArray: processedData.rows[0] ? Array.isArray(processedData.rows[0]) : false,
+        firstRowLength: processedData.rows[0] ? processedData.rows[0].length : 0,
+        sampleCellTypes: processedData.rows[0] ? processedData.rows[0].slice(0, 3).map(cell => typeof cell) : []
     });
     
     return processedData;
+}
+
+// 严格验证数据是否包含嵌套结构
+function strictValidateFirestoreData(data, path = '') {
+    console.log(`验证路径 ${path}:`, typeof data, Array.isArray(data) ? '数组' : '非数组');
+    
+    if (Array.isArray(data)) {
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            const currentPath = `${path}[${i}]`;
+            
+            // 检查数组元素是否为数组
+            if (Array.isArray(item)) {
+                console.error(`❌ 发现嵌套数组在路径: ${currentPath}`, item);
+                return false;
+            }
+            
+            // 检查数组元素是否为对象
+            if (typeof item === 'object' && item !== null) {
+                console.error(`❌ 发现嵌套对象在路径: ${currentPath}`, item);
+                return false;
+            }
+            
+            // 递归检查
+            if (!strictValidateFirestoreData(item, currentPath)) {
+                return false;
+            }
+        }
+    } else if (typeof data === 'object' && data !== null) {
+        for (const [key, value] of Object.entries(data)) {
+            if (!strictValidateFirestoreData(value, `${path}.${key}`)) {
+                return false;
+            }
+        }
+    }
+    
+    console.log(`✅ 路径 ${path} 验证通过`);
+    return true;
 }
 
 // 表单验证
@@ -1153,40 +1147,53 @@ async function processExcelFileCommon(isAdmin) {
 
     showLoading(true);
     try {
-        console.log('开始处理Excel数据...');
-        console.log('原始数据:', currentExcelData);
+        console.log('🚀 开始处理Excel数据...');
+        console.log('📊 原始数据:', currentExcelData);
         
-        // 使用专门的Excel数据处理函数
+        // 使用完全扁平化的Excel数据处理函数
         const processedData = processExcelDataForFirestore(currentExcelData);
         
-        // 验证处理后的数据
-        if (!validateFirestoreData(processedData.rows)) {
-            throw new Error('数据验证失败：仍然包含嵌套数组');
+        console.log('📋 处理后数据概要:', processedData);
+        
+        // 严格验证处理后的数据
+        console.log('🔍 开始严格验证数据结构...');
+        if (!strictValidateFirestoreData(processedData)) {
+            throw new Error('❌ 数据验证失败：仍然包含不支持的嵌套结构');
         }
         
-        console.log('数据验证通过，准备保存到Firestore');
+        console.log('✅ 数据验证通过，准备保存到Firestore');
 
-        // 将Excel数据保存到Firestore
+        // 创建最终的文档对象 - 确保所有字段都是基本类型
         const excelDoc = {
-            fileName: processedData.fileName,
-            headers: processedData.headers,
-            data: processedData.rows,
-            totalRows: processedData.rows.length,
-            uploadedAt: CURRENT_TIME,
-            uploadedBy: currentUser.username,
-            fileType: 'excel'
+            fileName: processedData.fileName,           // string
+            headers: processedData.headers,             // array of strings
+            data: processedData.rows,                   // array of arrays of basic types
+            totalRows: processedData.rows.length,      // number
+            uploadedAt: CURRENT_TIME,                   // string
+            uploadedBy: currentUser.username,           // string
+            fileType: 'excel'                           // string
         };
 
-        console.log('最终保存的文档结构:', {
-            fileName: excelDoc.fileName,
-            headersCount: excelDoc.headers.length,
-            dataRowsCount: excelDoc.data.length,
-            sampleHeader: excelDoc.headers[0],
-            sampleRow: excelDoc.data[0]
+        console.log('📝 最终保存的文档结构:', {
+            fileName: `"${excelDoc.fileName}" (${typeof excelDoc.fileName})`,
+            headersCount: `${excelDoc.headers.length} (${typeof excelDoc.headers})`,
+            dataRowsCount: `${excelDoc.data.length} (${typeof excelDoc.data})`,
+            totalRows: `${excelDoc.totalRows} (${typeof excelDoc.totalRows})`,
+            uploadedAt: `"${excelDoc.uploadedAt}" (${typeof excelDoc.uploadedAt})`,
+            uploadedBy: `"${excelDoc.uploadedBy}" (${typeof excelDoc.uploadedBy})`,
+            fileType: `"${excelDoc.fileType}" (${typeof excelDoc.fileType})`
         });
 
+        // 最后一次验证
+        console.log('🔍 最终验证完整文档...');
+        if (!strictValidateFirestoreData(excelDoc)) {
+            throw new Error('❌ 最终文档验证失败');
+        }
+
+        console.log('💾 开始保存到Firestore...');
         const docRef = await db.collection('excel_files').add(excelDoc);
         
+        console.log('🎉 Excel文件上传成功！文档ID:', docRef.id);
         alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${processedData.rows.length}`);
         
         if (isAdmin) {
@@ -1198,9 +1205,9 @@ async function processExcelFileCommon(isAdmin) {
         }
 
     } catch (error) {
-        console.error('Excel文件上传失败:', error);
-        console.error('错误详情:', error.message);
-        console.error('错误堆栈:', error.stack);
+        console.error('❌ Excel文件上传失败:', error);
+        console.error('📋 错误详情:', error.message);
+        console.error('📚 错误堆栈:', error.stack);
         alert('上传失败: ' + error.message);
     } finally {
         showLoading(false);

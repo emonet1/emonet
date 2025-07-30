@@ -105,85 +105,119 @@ function totallyFlattenData(data) {
 function processExcelDataForFirestore(excelData) {
     console.log('开始处理Excel数据，原始数据结构:', excelData);
     
-    // 强化headers处理 - 确保每个header都是字符串
-    const sanitizedHeaders = [];
-    if (Array.isArray(excelData.headers)) {
-        for (let i = 0; i < excelData.headers.length; i++) {
-            const header = excelData.headers[i];
-            let cleanHeader = '';
+    if (excelData.isMultiSheet) {
+        // 处理多工作表数据
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: true,
+            sheets: {},
+            totalRows: 0
+        };
+        
+        // 处理每个工作表
+        excelData.sheets.forEach((sheet, sheetIndex) => {
+            const sheetKey = `sheet_${sheetIndex}`;
+            const sanitizedHeaders = [];
             
-            if (header === null || header === undefined || header === '') {
-                cleanHeader = `列${i + 1}`;
-            } else if (Array.isArray(header)) {
-                // 如果header本身是数组，转换为字符串
-                cleanHeader = `列${i + 1}_${JSON.stringify(header)}`;
-            } else if (typeof header === 'object' && header !== null) {
-                // 如果header是对象，转换为字符串
-                cleanHeader = `列${i + 1}_${JSON.stringify(header)}`;
-            } else {
-                cleanHeader = String(header);
+            // 处理headers
+            for (let i = 0; i < sheet.headers.length; i++) {
+                const header = sheet.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
             }
             
-            sanitizedHeaders.push(cleanHeader);
-        }
-    }
-    
-    // 彻底扁平化行数据处理
-    const sanitizedRows = [];
-    if (Array.isArray(excelData.rows)) {
-        for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
-            const row = excelData.rows[rowIndex];
-            const sanitizedRow = {};
-            
-            if (Array.isArray(row)) {
-                // 将行数据转换为对象，使用索引作为key
+            // 处理行数据
+            const dataRows = {};
+            sheet.rows.forEach((row, rowIndex) => {
+                const sanitizedRow = {};
                 for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
                     const headerKey = `col_${colIndex}`;
                     const cell = row[colIndex];
-                    const flattenedCell = totallyFlattenData(cell);
-                    
-                    // 二次验证：确保flattenedCell不是数组或对象
-                    let finalValue = flattenedCell;
-                    if (Array.isArray(finalValue) || (typeof finalValue === 'object' && finalValue !== null)) {
-                        finalValue = JSON.stringify(finalValue);
-                    }
-                    
+                    const finalValue = totallyFlattenData(cell);
                     sanitizedRow[headerKey] = finalValue;
-                    console.log(`处理单元格[${rowIndex}][${colIndex}]:`, typeof cell, '=>', typeof finalValue, finalValue);
                 }
-            } else {
-                // 如果行不是数组，创建空对象
-                for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
-                    const headerKey = `col_${colIndex}`;
-                    sanitizedRow[headerKey] = '';
-                }
+                dataRows[`row_${rowIndex}`] = sanitizedRow;
+            });
+            
+            processedData.sheets[sheetKey] = {
+                sheetName: sheet.sheetName,
+                headersList: sanitizedHeaders.join('|||'),
+                headersMap: {},
+                dataRows: dataRows,
+                totalRows: sheet.rows.length
+            };
+            
+            // 创建headers映射
+            for (let i = 0; i < sanitizedHeaders.length; i++) {
+                processedData.sheets[sheetKey].headersMap[`header_${i}`] = sanitizedHeaders[i];
             }
             
-            sanitizedRows.push(sanitizedRow);
+            processedData.totalRows += sheet.rows.length;
+        });
+        
+        return processedData;
+    } else {
+        // 处理单工作表数据（原有逻辑）
+        const sanitizedHeaders = [];
+        if (Array.isArray(excelData.headers)) {
+            for (let i = 0; i < excelData.headers.length; i++) {
+                const header = excelData.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
         }
+        
+        const sanitizedRows = [];
+        if (Array.isArray(excelData.rows)) {
+            for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
+                const row = excelData.rows[rowIndex];
+                const sanitizedRow = {};
+                
+                if (Array.isArray(row)) {
+                    for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                        const headerKey = `col_${colIndex}`;
+                        const cell = row[colIndex];
+                        const finalValue = totallyFlattenData(cell);
+                        sanitizedRow[headerKey] = finalValue;
+                    }
+                }
+                
+                sanitizedRows.push(sanitizedRow);
+            }
+        }
+        
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            sheetName: excelData.sheetName,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: false,
+            headersList: sanitizedHeaders.join('|||'),
+            headersMap: {},
+            dataRows: {},
+            totalRows: sanitizedRows.length
+        };
+        
+        // 创建headers映射
+        for (let i = 0; i < sanitizedHeaders.length; i++) {
+            processedData.headersMap[`header_${i}`] = sanitizedHeaders[i];
+        }
+        
+        // 创建数据行映射
+        for (let rowIndex = 0; rowIndex < sanitizedRows.length; rowIndex++) {
+            processedData.dataRows[`row_${rowIndex}`] = sanitizedRows[rowIndex];
+        }
+        
+        return processedData;
     }
-    
-    // 返回完全扁平化的数据结构 - 避免返回数组
-    const processedData = {
-        fileName: String(excelData.fileName || '未知文件'),
-        // 不返回headers数组，直接转换为字符串和映射
-        headersList: sanitizedHeaders.join('|||'),
-        headersMap: {},
-        // 不返回rows数组，直接转换为对象映射
-        dataRows: {},
-        totalRows: sanitizedRows.length
-    };
-    
-    // 创建headers映射
-    for (let i = 0; i < sanitizedHeaders.length; i++) {
-        processedData.headersMap[`header_${i}`] = sanitizedHeaders[i];
-    }
-    
-    // 创建数据行映射
-    for (let rowIndex = 0; rowIndex < sanitizedRows.length; rowIndex++) {
-        processedData.dataRows[`row_${rowIndex}`] = sanitizedRows[rowIndex];
-    }
-    return processedData;
 }
 
 // 更严格的数据验证函数
@@ -1067,6 +1101,210 @@ function handleExcelFileSelectCommon(event, isAdmin) {
     readExcelFile(file, isAdmin);
 }
 
+// 显示工作表选择器
+function showSheetSelector(workbook, file, isAdmin) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>选择工作表</h3>
+                <button onclick="this.closest('.modal').remove()" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>检测到多个工作表，请选择要上传的工作表：</p>
+                <div class="sheet-selector">
+                    ${workbook.SheetNames.map((sheetName, index) => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+                        const rowCount = range.e.r - range.s.r;
+                        const colCount = range.e.c - range.s.c + 1;
+                        
+                        return `
+                            <div class="sheet-option" onclick="selectSheet('${sheetName}', ${index})">
+                                <div class="sheet-info">
+                                    <h4>${sheetName}</h4>
+                                    <p>行数: ${rowCount}, 列数: ${colCount}</p>
+                                </div>
+                                <i class="ri-arrow-right-line"></i>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="modal-actions">
+                    <button onclick="selectAllSheets()" class="btn btn-primary">
+                        <i class="ri-stack-line"></i> 全部上传
+                    </button>
+                    <button onclick="this.closest('.modal').remove()" class="btn btn-secondary">取消</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    
+    // 保存工作簿信息到全局变量
+    window.currentWorkbook = workbook;
+    window.currentFile = file;
+    window.currentIsAdmin = isAdmin;
+}
+
+// 选择单个工作表
+function selectSheet(sheetName, index) {
+    const workbook = window.currentWorkbook;
+    const file = window.currentFile;
+    const isAdmin = window.currentIsAdmin;
+    
+    processWorksheet(workbook, sheetName, file, isAdmin);
+    
+    // 关闭选择器
+    document.querySelector('.modal').remove();
+}
+
+// 选择所有工作表
+function selectAllSheets() {
+    const workbook = window.currentWorkbook;
+    const file = window.currentFile;
+    const isAdmin = window.currentIsAdmin;
+    
+    // 处理所有工作表
+    const allSheetsData = [];
+    
+    workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1,
+            defval: '', 
+            raw: false  
+        });
+        
+        if (jsonData.length > 0) {
+            const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
+                if (header === null || header === undefined || header === '') {
+                    return `列${index + 1}`;
+                }
+                return String(header);
+            }) : [];
+
+            const cleanRows = jsonData.slice(1).map(row => {
+                if (!Array.isArray(row)) {
+                    return new Array(cleanHeaders.length).fill('');
+                }
+                return row.map(cell => {
+                    if (cell === null || cell === undefined) {
+                        return '';
+                    }
+                    if (typeof cell === 'object') {
+                        return JSON.stringify(cell);
+                    }
+                    return String(cell);
+                });
+            });
+
+            allSheetsData.push({
+                sheetName: sheetName,
+                headers: cleanHeaders,
+                rows: cleanRows
+            });
+        }
+    });
+
+    currentExcelData = {
+        fileName: file.name,
+        originalFile: file, // 保存原始文件
+        fileSize: file.size,
+        fileType: file.type,
+        lastModified: file.lastModified,
+        totalSheets: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        sheets: allSheetsData,
+        isMultiSheet: true,
+        isAdmin: isAdmin
+    };
+
+    console.log('✅ 多工作表Excel数据:', {
+        fileName: currentExcelData.fileName,
+        totalSheets: currentExcelData.totalSheets,
+        sheetNames: currentExcelData.sheetNames,
+        sheetsData: currentExcelData.sheets.map(sheet => ({
+            name: sheet.sheetName,
+            rows: sheet.rows.length,
+            cols: sheet.headers.length
+        }))
+    });
+
+    displayExcelPreview(isAdmin);
+    
+    // 关闭选择器
+    document.querySelector('.modal').remove();
+}
+
+// 处理单个工作表
+function processWorksheet(workbook, sheetName, file, isAdmin) {
+    const worksheet = workbook.Sheets[sheetName];
+    
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1,
+        defval: '', 
+        raw: false  
+    });
+    
+    if (jsonData.length === 0) {
+        alert('选择的工作表为空');
+        return;
+    }
+
+    const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
+        if (header === null || header === undefined || header === '') {
+            return `列${index + 1}`;
+        }
+        return String(header);
+    }) : [];
+
+    const cleanRows = jsonData.slice(1).map(row => {
+        if (!Array.isArray(row)) {
+            return new Array(cleanHeaders.length).fill('');
+        }
+        return row.map(cell => {
+            if (cell === null || cell === undefined) {
+                return '';
+            }
+            if (typeof cell === 'object') {
+                return JSON.stringify(cell);
+            }
+            return String(cell);
+        });
+    });
+
+    currentExcelData = {
+        fileName: file.name,
+        originalFile: file, // 保存原始文件
+        fileSize: file.size,
+        fileType: file.type,
+        lastModified: file.lastModified,
+        sheetName: sheetName,
+        totalSheets: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        data: [cleanHeaders, ...cleanRows],
+        headers: cleanHeaders,
+        rows: cleanRows,
+        isMultiSheet: false,
+        isAdmin: isAdmin
+    };
+
+    console.log('✅ 单工作表Excel数据:', {
+        fileName: currentExcelData.fileName,
+        sheetName: currentExcelData.sheetName,
+        totalSheets: currentExcelData.totalSheets,
+        headersCount: currentExcelData.headers.length,
+        rowsCount: currentExcelData.rows.length
+    });
+
+    displayExcelPreview(isAdmin);
+}
+
+// 更新预览显示函数
 function displayExcelPreview(isAdmin = false) {
     const previewId = isAdmin ? 'adminExcelPreview' : 'excelPreview';
     const containerId = isAdmin ? 'adminExcelTableContainer' : 'excelTableContainer';
@@ -1076,10 +1314,57 @@ function displayExcelPreview(isAdmin = false) {
     
     if (!previewDiv || !tableContainer || !currentExcelData) return;
 
-    // 创建预览表格
     let tableHTML = `
         <div class="file-info">
             <p><strong>文件名:</strong> ${currentExcelData.fileName}</p>
+            <p><strong>文件大小:</strong> ${(currentExcelData.fileSize / 1024).toFixed(2)} KB</p>
+            <p><strong>总工作表数:</strong> ${currentExcelData.totalSheets}</p>
+    `;
+
+    if (currentExcelData.isMultiSheet) {
+        // 多工作表预览
+        tableHTML += `<p><strong>将要上传:</strong> 所有工作表 (${currentExcelData.sheets.length}个)</p></div>`;
+        
+        currentExcelData.sheets.forEach((sheet, index) => {
+            if (index < 3) { // 只显示前3个工作表的预览
+                tableHTML += `
+                    <div class="sheet-preview">
+                        <h4>工作表: ${sheet.sheetName}</h4>
+                        <p>数据行数: ${sheet.rows.length}, 列数: ${sheet.headers.length}</p>
+                        <table class="excel-table">
+                            <thead>
+                                <tr>
+                                    ${sheet.headers.map(header => 
+                                        `<th>${String(header || '未命名列')}</th>`
+                                    ).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sheet.rows.slice(0, 5).map(row => `
+                                    <tr>
+                                        ${sheet.headers.map((_, colIndex) => {
+                                            const cellValue = row[colIndex];
+                                            let displayValue = String(cellValue || '');
+                                            return `<td>${displayValue}</td>`;
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                                ${sheet.rows.length > 5 ? 
+                                    `<tr><td colspan="${sheet.headers.length}" style="text-align: center; color: #666;">... 还有 ${sheet.rows.length - 5} 行</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        });
+        
+        if (currentExcelData.sheets.length > 3) {
+            tableHTML += `<p style="text-align: center; color: #666;">... 还有 ${currentExcelData.sheets.length - 3} 个工作表</p>`;
+        }
+    } else {
+        // 单工作表预览
+        tableHTML += `
+            <p><strong>工作表:</strong> ${currentExcelData.sheetName}</p>
             <p><strong>数据行数:</strong> ${currentExcelData.rows.length}</p>
             <p><strong>列数:</strong> ${currentExcelData.headers.length}</p>
         </div>
@@ -1092,401 +1377,144 @@ function displayExcelPreview(isAdmin = false) {
                 </tr>
             </thead>
             <tbody>
-    `;
-
-    // 只显示前10行数据作为预览
-    const previewRows = currentExcelData.rows.slice(0, 10);
-    previewRows.forEach(row => {
-        tableHTML += '<tr>';
-        currentExcelData.headers.forEach((_, index) => {
-            const cellValue = row[index];
-            let displayValue = '';
-            
-            if (Array.isArray(cellValue)) {
-                displayValue = JSON.stringify(cellValue);
-            } else if (cellValue && typeof cellValue === 'object') {
-                displayValue = JSON.stringify(cellValue);
-            } else {
-                displayValue = String(cellValue || '');
-            }
-            
-            tableHTML += `<td>${displayValue}</td>`;
-        });
-        tableHTML += '</tr>';
-    });
-
-    if (currentExcelData.rows.length > 10) {
-        tableHTML += `
-            <tr>
-                <td colspan="${currentExcelData.headers.length}" style="text-align: center; color: #666; font-style: italic;">
-                    ... 还有 ${currentExcelData.rows.length - 10} 行数据
-                </td>
-            </tr>
+                ${currentExcelData.rows.slice(0, 10).map(row => `
+                    <tr>
+                        ${currentExcelData.headers.map((_, index) => {
+                            const cellValue = row[index];
+                            let displayValue = String(cellValue || '');
+                            return `<td>${displayValue}</td>`;
+                        }).join('')}
+                    </tr>
+                `).join('')}
+                ${currentExcelData.rows.length > 10 ? 
+                    `<tr><td colspan="${currentExcelData.headers.length}" style="text-align: center; color: #666;">... 还有 ${currentExcelData.rows.length - 10} 行数据</td></tr>` : ''}
+            </tbody>
+        </table>
         `;
     }
-
-    tableHTML += '</tbody></table>';
     
     tableContainer.innerHTML = tableHTML;
     previewDiv.style.display = 'block';
 }
 
-async function processExcelFile() {
-    await processExcelFileCommon(false);
-}
-
-async function processAdminExcelFile() {
-    await processExcelFileCommon(true);
-}
-
-async function processExcelFileCommon(isAdmin) {
-    if (!currentExcelData) {
-        alert('请先选择Excel文件');
-        return;
-    }
-
-    showLoading(true);
-    try {
-        console.log('🚀 开始处理Excel数据...');
-        console.log('📊 原始数据:', currentExcelData);
+// 更新数据处理函数以支持多工作表
+function processExcelDataForFirestore(excelData) {
+    console.log('开始处理Excel数据，原始数据结构:', excelData);
+    
+    if (excelData.isMultiSheet) {
+        // 处理多工作表数据
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: true,
+            sheets: {},
+            totalRows: 0
+        };
         
-        // 使用完全扁平化的Excel数据处理函数
-        const processedData = processExcelDataForFirestore(currentExcelData);
+        // 处理每个工作表
+        excelData.sheets.forEach((sheet, sheetIndex) => {
+            const sheetKey = `sheet_${sheetIndex}`;
+            const sanitizedHeaders = [];
+            
+            // 处理headers
+            for (let i = 0; i < sheet.headers.length; i++) {
+                const header = sheet.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
+            
+            // 处理行数据
+            const dataRows = {};
+            sheet.rows.forEach((row, rowIndex) => {
+                const sanitizedRow = {};
+                for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                    const headerKey = `col_${colIndex}`;
+                    const cell = row[colIndex];
+                    const finalValue = totallyFlattenData(cell);
+                    sanitizedRow[headerKey] = finalValue;
+                }
+                dataRows[`row_${rowIndex}`] = sanitizedRow;
+            });
+            
+            processedData.sheets[sheetKey] = {
+                sheetName: sheet.sheetName,
+                headersList: sanitizedHeaders.join('|||'),
+                headersMap: {},
+                dataRows: dataRows,
+                totalRows: sheet.rows.length
+            };
+            
+            // 创建headers映射
+            for (let i = 0; i < sanitizedHeaders.length; i++) {
+                processedData.sheets[sheetKey].headersMap[`header_${i}`] = sanitizedHeaders[i];
+            }
+            
+            processedData.totalRows += sheet.rows.length;
+        });
         
-        console.log('📋 处理后数据概要:', processedData);
+        return processedData;
+    } else {
+        // 处理单工作表数据（原有逻辑）
+        const sanitizedHeaders = [];
+        if (Array.isArray(excelData.headers)) {
+            for (let i = 0; i < excelData.headers.length; i++) {
+                const header = excelData.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
+        }
         
-        // 创建最终的文档对象 - 完全消除所有数组结构
-        const excelDoc = {
-            fileName: processedData.fileName,
+        const sanitizedRows = [];
+        if (Array.isArray(excelData.rows)) {
+            for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
+                const row = excelData.rows[rowIndex];
+                const sanitizedRow = {};
+                
+                if (Array.isArray(row)) {
+                    for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                        const headerKey = `col_${colIndex}`;
+                        const cell = row[colIndex];
+                        const finalValue = totallyFlattenData(cell);
+                        sanitizedRow[headerKey] = finalValue;
+                    }
+                }
+                
+                sanitizedRows.push(sanitizedRow);
+            }
+        }
+        
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            sheetName: excelData.sheetName,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: false,
+            headersList: sanitizedHeaders.join('|||'),
             headersMap: {},
-            headersList: processedData.headers.join('|||'), // 使用字符串存储headers
-            // 将数据行数组转换为单个对象，每行用索引作为key
             dataRows: {},
-            totalRows: processedData.totalRows,
-            uploadedAt: CURRENT_TIME,
-            uploadedBy: currentUser.username,
-            fileType: 'excel'
+            totalRows: sanitizedRows.length
         };
         
         // 创建headers映射
-        for (let i = 0; i < processedData.headers.length; i++) {
-            excelDoc.headersMap[`header_${i}`] = processedData.headers[i];
-        }
-
-        // 将数据行数组转换为对象，彻底消除数组嵌套
-        for (let rowIndex = 0; rowIndex < processedData.rows.length; rowIndex++) {
-            const rowData = processedData.rows[rowIndex];
-            excelDoc.dataRows[`row_${rowIndex}`] = rowData;
-        }
-
-        console.log('📝 最终保存的文档结构:', {
-            fileName: `"${excelDoc.fileName}" (${typeof excelDoc.fileName})`,
-            headersMapType: typeof excelDoc.headersMap,
-            headersListType: typeof excelDoc.headersList,
-            dataRowsType: typeof excelDoc.dataRows,
-            dataRowsIsArray: Array.isArray(excelDoc.dataRows),
-            totalRows: `${excelDoc.totalRows} (${typeof excelDoc.totalRows})`,
-            uploadedAt: `"${excelDoc.uploadedAt}" (${typeof excelDoc.uploadedAt})`,
-            uploadedBy: `"${excelDoc.uploadedBy}" (${typeof excelDoc.uploadedBy})`,
-            fileType: `"${excelDoc.fileType}" (${typeof excelDoc.fileType})`
-        });
-
-        // 严格验证处理后的数据
-        console.log('🔍 开始严格验证数据结构...');
-        if (!strictValidateFirestoreData(excelDoc)) {
-            throw new Error('❌ 数据验证失败：仍然包含不支持的嵌套结构');
+        for (let i = 0; i < sanitizedHeaders.length; i++) {
+            processedData.headersMap[`header_${i}`] = sanitizedHeaders[i];
         }
         
-        console.log('✅ 数据验证通过，准备保存到Firestore');
-
-        console.log('💾 开始保存到Firestore...');
-        const docRef = await db.collection('excel_files').add(excelDoc);
-        
-        console.log('🎉 Excel文件上传成功！文档ID:', docRef.id);
-        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${processedData.totalRows}`);
-        
-        if (isAdmin) {
-            clearAdminExcelPreview();
-            await loadAdminExcelList();
-        } else {
-            clearExcelPreview();
-            await loadUserExcelList();
+        // 创建数据行映射
+        for (let rowIndex = 0; rowIndex < sanitizedRows.length; rowIndex++) {
+            processedData.dataRows[`row_${rowIndex}`] = sanitizedRows[rowIndex];
         }
-
-    } catch (error) {
-        console.error('❌ Excel文件上传失败:', error);
-        console.error('📋 错误详情:', error.message);
-        console.error('📚 错误堆栈:', error.stack);
-        alert('上传失败: ' + error.message);
-    } finally {
-        showLoading(false);
+        
+        return processedData;
     }
 }
-
-// 更新查看文件函数以适应新的数据结构
-async function viewExcelFile(fileId) {
-    try {
-        const doc = await db.collection('excel_files').doc(fileId).get();
-        if (!doc.exists) {
-            alert('文件不存在');
-            return;
-        }
-
-        const fileData = doc.data();
-        
-        // 处理headers - 支持新旧格式
-        let headers = [];
-        if (fileData.headersList) {
-            // 新格式：从字符串恢复headers
-            headers = fileData.headersList.split('|||');
-        } else if (fileData.headers) {
-            // 旧格式：直接使用headers数组
-            headers = fileData.headers;
-        } else if (fileData.headersMap) {
-            // 从headersMap恢复headers
-            const headerKeys = Object.keys(fileData.headersMap).sort((a, b) => {
-                const aIndex = parseInt(a.split('_')[1]);
-                const bIndex = parseInt(b.split('_')[1]);
-                return aIndex - bIndex;
-            });
-            headers = headerKeys.map(key => fileData.headersMap[key]);
-        }
-        
-        // 处理数据行 - 支持新旧格式
-        let dataRows = [];
-        if (fileData.dataRows) {
-            // 新格式：从对象恢复数据行
-            const rowKeys = Object.keys(fileData.dataRows).sort((a, b) => {
-                const aIndex = parseInt(a.split('_')[1]);
-                const bIndex = parseInt(b.split('_')[1]);
-                return aIndex - bIndex;
-            });
-            dataRows = rowKeys.map(key => fileData.dataRows[key]);
-        } else if (fileData.data) {
-            // 旧格式：直接使用数据数组
-            dataRows = fileData.data;
-        }
-        
-        // 创建查看窗口
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'block';
-        modal.innerHTML = `
-            <div class="modal-content excel-view-modal">
-                <div class="modal-header">
-                    <h3>${fileData.fileName}</h3>
-                    <button onclick="this.closest('.modal').remove()" class="modal-close">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="file-info">
-                        <p><strong>上传者:</strong> ${fileData.uploadedBy}</p>
-                        <p><strong>上传时间:</strong> ${formatDate(fileData.uploadedAt)}</p>
-                        <p><strong>数据行数:</strong> ${fileData.totalRows}</p>
-                    </div>
-                    <div class="excel-data-container">
-                        <table class="excel-table">
-                            <thead>
-                                <tr>
-                                    ${headers.map(header => 
-                                        `<th>${String(header || '未命名列')}</th>`
-                                    ).join('')}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${dataRows.slice(0, 50).map(row => `
-                                    <tr>
-                                        ${headers.map((_, index) => {
-                                            const colKey = `col_${index}`;
-                                            const cellValue = row[colKey];
-                                            let displayValue = '';
-                                            
-                                            if (typeof cellValue === 'string') {
-                                                displayValue = cellValue;
-                                            } else if (cellValue === null || cellValue === undefined) {
-                                                displayValue = '';
-                                            } else {
-                                                displayValue = String(cellValue);
-                                            }
-                                            
-                                            return `<td>${displayValue}</td>`;
-                                        }).join('')}
-                                    </tr>
-                                `).join('')}
-                                ${dataRows.length > 50 ? 
-                                    `<tr><td colspan="${headers.length}" style="text-align: center; color: #666;">... 还有 ${dataRows.length - 50} 行数据</td></tr>` : ''}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-    } catch (error) {
-        console.error('查看文件失败:', error);
-        alert('查看文件失败: ' + error.message);
-    }
-}
-
-// 更新下载函数以适应新的数据结构
-async function downloadExcelData(fileId) {
-    try {
-        const doc = await db.collection('excel_files').doc(fileId).get();
-        if (!doc.exists) {
-            alert('文件不存在');
-            return;
-        }
-
-        const fileData = doc.data();
-        
-        // 处理headers - 支持新旧格式
-        let headers = [];
-        if (fileData.headersList) {
-            headers = fileData.headersList.split('|||');
-        } else if (fileData.headers) {
-            headers = fileData.headers;
-        } else if (fileData.headersMap) {
-            const headerKeys = Object.keys(fileData.headersMap).sort((a, b) => {
-                const aIndex = parseInt(a.split('_')[1]);
-                const bIndex = parseInt(b.split('_')[1]);
-                return aIndex - bIndex;
-            });
-            headers = headerKeys.map(key => fileData.headersMap[key]);
-        }
-        
-        // 处理数据行 - 支持新旧格式
-        let dataRows = [];
-        if (fileData.dataRows) {
-            // 新格式：从对象恢复数据行
-            const rowKeys = Object.keys(fileData.dataRows).sort((a, b) => {
-                const aIndex = parseInt(a.split('_')[1]);
-                const bIndex = parseInt(b.split('_')[1]);
-                return aIndex - bIndex;
-            });
-            dataRows = rowKeys.map(key => fileData.dataRows[key]);
-        } else if (fileData.data) {
-            // 旧格式：直接使用数据数组
-            dataRows = fileData.data;
-        }
-        
-        // 将对象数组转换回二维数组格式
-        const wsData = [headers];
-        dataRows.forEach(row => {
-            const rowArray = [];
-            headers.forEach((_, index) => {
-                const colKey = `col_${index}`;
-                rowArray.push(row[colKey] || '');
-            });
-            wsData.push(rowArray);
-        });
-        
-        // 创建新的工作簿
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-        
-        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-        
-        // 下载文件
-        XLSX.writeFile(wb, fileData.fileName);
-
-    } catch (error) {
-        console.error('下载失败:', error);
-        alert('下载失败: ' + error.message);
-    }
-}
-
-// 标签页切换功能
-function switchTab(tabId) {
-    // 隐藏所有管理员标签内容
-    const adminTabs = ['pendingUsers', 'codeFiles', 'excelFiles'];
-    adminTabs.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.classList.remove('active');
-    });
-    
-    // 移除所有管理员标签按钮的active类
-    document.querySelectorAll('#adminPanel .tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    // 显示选中的标签内容
-    const selectedTab = document.getElementById(tabId);
-    if (selectedTab) {
-        selectedTab.classList.add('active');
-    }
-    
-    // 添加active类到对应按钮
-    const selectedBtn = document.querySelector(`#adminPanel [onclick="switchTab('${tabId}')"]`);
-    if (selectedBtn) {
-        selectedBtn.classList.add('active');
-    }
-    
-    // 根据标签加载相应数据
-    if (tabId === 'codeFiles') {
-        loadAdminCodeList();
-    } else if (tabId === 'pendingUsers') {
-        loadPendingUsers();
-    } else if (tabId === 'excelFiles') {
-        loadAdminExcelList();
-    }
-}
-
-function switchUserTab(tabId) {
-    // 隐藏所有用户标签内容
-    const userTabs = ['codeTab', 'excelTab'];
-    userTabs.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.classList.remove('active');
-    });
-    
-    // 移除所有用户标签按钮的active类
-    document.querySelectorAll('#userPanel .tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    
-    // 显示选中的标签内容
-    const selectedTab = document.getElementById(tabId);
-    if (selectedTab) {
-        selectedTab.classList.add('active');
-    }
-    
-    // 添加active类到对应按钮
-    const selectedBtn = document.querySelector(`#userPanel [onclick="switchUserTab('${tabId}')"]`);
-    if (selectedBtn) {
-        selectedBtn.classList.add('active');
-    }
-    
-    // 根据标签加载相应数据
-    if (tabId === 'codeTab') {
-        loadUserCodeList();
-    } else if (tabId === 'excelTab') {
-        loadUserExcelList();
-    }
-}
-
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('系统初始化 -', CURRENT_TIME);
-    console.log('当前用户:', CURRENT_USER);
-
-    // 绑定表单提交事件
-    const loginForm = document.getElementById('loginFormElement');
-    const registerForm = document.getElementById('registerFormElement');
-    const statusQueryForm = document.getElementById('statusQueryElement');
-    const codeForm = document.getElementById('codeForm');
-
-    if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    if (registerForm) registerForm.addEventListener('submit', handleRegister);
-    if (statusQueryForm) statusQueryForm.addEventListener('submit', handleStatusQuery);
-    if (codeForm) codeForm.addEventListener('submit', handleCodeSubmit);
-
-    // 初始化Excel上传功能
-    initializeExcelUpload();
-
-    // 显示登录表单
-    showLoginForm();
-});
 
 // 导出全局函数
 window.showLoginForm = showLoginForm;
@@ -1653,7 +1681,7 @@ function handleLogout() {
     showLoginForm();
 }
 
-// 改进的Excel文件读取函数 - 处理多个sheet
+// 改进的Excel文件读取函数 - 支持多个sheet选择
 function readExcelFile(file, isAdmin = false) {
     const reader = new FileReader();
     
@@ -1667,31 +1695,102 @@ function readExcelFile(file, isAdmin = false) {
                 totalSheets: workbook.SheetNames.length
             });
             
-            // 如果有多个sheet，让用户选择或默认使用第一个
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            
-            console.log('📊 使用工作表:', firstSheetName);
-            
-            // 转换为JSON数据，使用更安全的选项
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-                header: 1,
-                defval: '', // 空单元格默认值
-                raw: false  // 不使用原始值，全部转为字符串
-            });
-            
-            console.log('📈 转换后的JSON数据结构:', {
-                totalRows: jsonData.length,
-                firstRowLength: jsonData[0] ? jsonData[0].length : 0,
-                sampleData: jsonData.slice(0, 2)
-            });
-            
-            if (jsonData.length === 0) {
-                alert('Excel文件为空或选择的工作表为空');
-                return;
+            // 如果有多个sheet，显示选择器
+            if (workbook.SheetNames.length > 1) {
+                showSheetSelector(workbook, file, isAdmin);
+            } else {
+                // 只有一个sheet，直接处理
+                processWorksheet(workbook, workbook.SheetNames[0], file, isAdmin);
             }
+            
+        } catch (error) {
+            console.error('Excel文件读取失败:', error);
+            alert('Excel文件读取失败，请检查文件格式');
+        }
+    };
 
-            // 确保headers都是字符串类型
+    reader.readAsArrayBuffer(file);
+}
+
+// 显示工作表选择器
+function showSheetSelector(workbook, file, isAdmin) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>选择工作表</h3>
+                <button onclick="this.closest('.modal').remove()" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>检测到多个工作表，请选择要上传的工作表：</p>
+                <div class="sheet-selector">
+                    ${workbook.SheetNames.map((sheetName, index) => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+                        const rowCount = range.e.r - range.s.r;
+                        const colCount = range.e.c - range.s.c + 1;
+                        
+                        return `
+                            <div class="sheet-option" onclick="selectSheet('${sheetName}', ${index})">
+                                <div class="sheet-info">
+                                    <h4>${sheetName}</h4>
+                                    <p>行数: ${rowCount}, 列数: ${colCount}</p>
+                                </div>
+                                <i class="ri-arrow-right-line"></i>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="modal-actions">
+                    <button onclick="selectAllSheets()" class="btn btn-primary">
+                        <i class="ri-stack-line"></i> 全部上传
+                    </button>
+                    <button onclick="this.closest('.modal').remove()" class="btn btn-secondary">取消</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    
+    // 保存工作簿信息到全局变量
+    window.currentWorkbook = workbook;
+    window.currentFile = file;
+    window.currentIsAdmin = isAdmin;
+}
+
+// 选择单个工作表
+function selectSheet(sheetName, index) {
+    const workbook = window.currentWorkbook;
+    const file = window.currentFile;
+    const isAdmin = window.currentIsAdmin;
+    
+    processWorksheet(workbook, sheetName, file, isAdmin);
+    
+    // 关闭选择器
+    document.querySelector('.modal').remove();
+}
+
+// 选择所有工作表
+function selectAllSheets() {
+    const workbook = window.currentWorkbook;
+    const file = window.currentFile;
+    const isAdmin = window.currentIsAdmin;
+    
+    // 处理所有工作表
+    const allSheetsData = [];
+    
+    workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1,
+            defval: '', 
+            raw: false  
+        });
+        
+        if (jsonData.length > 0) {
             const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
                 if (header === null || header === undefined || header === '') {
                     return `列${index + 1}`;
@@ -1699,7 +1798,6 @@ function readExcelFile(file, isAdmin = false) {
                 return String(header);
             }) : [];
 
-            // 确保数据行都是数组且只包含基本类型
             const cleanRows = jsonData.slice(1).map(row => {
                 if (!Array.isArray(row)) {
                     return new Array(cleanHeaders.length).fill('');
@@ -1715,27 +1813,364 @@ function readExcelFile(file, isAdmin = false) {
                 });
             });
 
-            currentExcelData = {
-                fileName: file.name,
-                sheetName: firstSheetName,
-                totalSheets: workbook.SheetNames.length,
-                data: [cleanHeaders, ...cleanRows],
+            allSheetsData.push({
+                sheetName: sheetName,
                 headers: cleanHeaders,
-                rows: cleanRows,
-                isAdmin: isAdmin
-            };
-
-            console.log('✅ 清理后的Excel数据:', {
-                fileName: currentExcelData.fileName,
-                sheetName: currentExcelData.sheetName,
-                totalSheets: currentExcelData.totalSheets,
-                headersCount: currentExcelData.headers.length,
-                rowsCount: currentExcelData.rows.length,
-                headerTypes: currentExcelData.headers.map(h => typeof h),
-                sampleRowTypes: currentExcelData.rows[0] ? currentExcelData.rows[0].map(c => typeof c) : []
+                rows: cleanRows
             });
+        }
+    });
 
-            displayExcelPreview(isAdmin);
+    currentExcelData = {
+        fileName: file.name,
+        originalFile: file, // 保存原始文件
+        fileSize: file.size,
+        fileType: file.type,
+        lastModified: file.lastModified,
+        totalSheets: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        sheets: allSheetsData,
+        isMultiSheet: true,
+        isAdmin: isAdmin
+    };
+
+    console.log('✅ 多工作表Excel数据:', {
+        fileName: currentExcelData.fileName,
+        totalSheets: currentExcelData.totalSheets,
+        sheetNames: currentExcelData.sheetNames,
+        sheetsData: currentExcelData.sheets.map(sheet => ({
+            name: sheet.sheetName,
+            rows: sheet.rows.length,
+            cols: sheet.headers.length
+        }))
+    });
+
+    displayExcelPreview(isAdmin);
+    
+    // 关闭选择器
+    document.querySelector('.modal').remove();
+}
+
+// 处理单个工作表
+function processWorksheet(workbook, sheetName, file, isAdmin) {
+    const worksheet = workbook.Sheets[sheetName];
+    
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1,
+        defval: '', 
+        raw: false  
+    });
+    
+    if (jsonData.length === 0) {
+        alert('选择的工作表为空');
+        return;
+    }
+
+    const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
+        if (header === null || header === undefined || header === '') {
+            return `列${index + 1}`;
+        }
+        return String(header);
+    }) : [];
+
+    const cleanRows = jsonData.slice(1).map(row => {
+        if (!Array.isArray(row)) {
+            return new Array(cleanHeaders.length).fill('');
+        }
+        return row.map(cell => {
+            if (cell === null || cell === undefined) {
+                return '';
+            }
+            if (typeof cell === 'object') {
+                return JSON.stringify(cell);
+            }
+            return String(cell);
+        });
+    });
+
+    currentExcelData = {
+        fileName: file.name,
+        originalFile: file, // 保存原始文件
+        fileSize: file.size,
+        fileType: file.type,
+        lastModified: file.lastModified,
+        sheetName: sheetName,
+        totalSheets: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        data: [cleanHeaders, ...cleanRows],
+        headers: cleanHeaders,
+        rows: cleanRows,
+        isMultiSheet: false,
+        isAdmin: isAdmin
+    };
+
+    console.log('✅ 单工作表Excel数据:', {
+        fileName: currentExcelData.fileName,
+        sheetName: currentExcelData.sheetName,
+        totalSheets: currentExcelData.totalSheets,
+        headersCount: currentExcelData.headers.length,
+        rowsCount: currentExcelData.rows.length
+    });
+
+    displayExcelPreview(isAdmin);
+}
+
+// 更新预览显示函数
+function displayExcelPreview(isAdmin = false) {
+    const previewId = isAdmin ? 'adminExcelPreview' : 'excelPreview';
+    const containerId = isAdmin ? 'adminExcelTableContainer' : 'excelTableContainer';
+    
+    const previewDiv = document.getElementById(previewId);
+    const tableContainer = document.getElementById(containerId);
+    
+    if (!previewDiv || !tableContainer || !currentExcelData) return;
+
+    let tableHTML = `
+        <div class="file-info">
+            <p><strong>文件名:</strong> ${currentExcelData.fileName}</p>
+            <p><strong>文件大小:</strong> ${(currentExcelData.fileSize / 1024).toFixed(2)} KB</p>
+            <p><strong>总工作表数:</strong> ${currentExcelData.totalSheets}</p>
+    `;
+
+    if (currentExcelData.isMultiSheet) {
+        // 多工作表预览
+        tableHTML += `<p><strong>将要上传:</strong> 所有工作表 (${currentExcelData.sheets.length}个)</p></div>`;
+        
+        currentExcelData.sheets.forEach((sheet, index) => {
+            if (index < 3) { // 只显示前3个工作表的预览
+                tableHTML += `
+                    <div class="sheet-preview">
+                        <h4>工作表: ${sheet.sheetName}</h4>
+                        <p>数据行数: ${sheet.rows.length}, 列数: ${sheet.headers.length}</p>
+                        <table class="excel-table">
+                            <thead>
+                                <tr>
+                                    ${sheet.headers.map(header => 
+                                        `<th>${String(header || '未命名列')}</th>`
+                                    ).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sheet.rows.slice(0, 5).map(row => `
+                                    <tr>
+                                        ${sheet.headers.map((_, colIndex) => {
+                                            const cellValue = row[colIndex];
+                                            let displayValue = String(cellValue || '');
+                                            return `<td>${displayValue}</td>`;
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                                ${sheet.rows.length > 5 ? 
+                                    `<tr><td colspan="${sheet.headers.length}" style="text-align: center; color: #666;">... 还有 ${sheet.rows.length - 5} 行</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        });
+        
+        if (currentExcelData.sheets.length > 3) {
+            tableHTML += `<p style="text-align: center; color: #666;">... 还有 ${currentExcelData.sheets.length - 3} 个工作表</p>`;
+        }
+    } else {
+        // 单工作表预览
+        tableHTML += `
+            <p><strong>工作表:</strong> ${currentExcelData.sheetName}</p>
+            <p><strong>数据行数:</strong> ${currentExcelData.rows.length}</p>
+            <p><strong>列数:</strong> ${currentExcelData.headers.length}</p>
+        </div>
+        <table class="excel-table">
+            <thead>
+                <tr>
+                    ${currentExcelData.headers.map(header => 
+                        `<th>${String(header || '未命名列')}</th>`
+                    ).join('')}
+                </tr>
+            </thead>
+            <tbody>
+                ${currentExcelData.rows.slice(0, 10).map(row => `
+                    <tr>
+                        ${currentExcelData.headers.map((_, index) => {
+                            const cellValue = row[index];
+                            let displayValue = String(cellValue || '');
+                            return `<td>${displayValue}</td>`;
+                        }).join('')}
+                    </tr>
+                `).join('')}
+                ${currentExcelData.rows.length > 10 ? 
+                    `<tr><td colspan="${currentExcelData.headers.length}" style="text-align: center; color: #666;">... 还有 ${currentExcelData.rows.length - 10} 行数据</td></tr>` : ''}
+            </tbody>
+        </table>
+        `;
+    }
+    
+    tableContainer.innerHTML = tableHTML;
+}
+
+// 更新数据处理函数以支持多工作表
+function processExcelDataForFirestore(excelData) {
+    console.log('开始处理Excel数据，原始数据结构:', excelData);
+    
+    if (excelData.isMultiSheet) {
+        // 处理多工作表数据
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: true,
+            sheets: {},
+            totalRows: 0
+        };
+        
+        // 处理每个工作表
+        excelData.sheets.forEach((sheet, sheetIndex) => {
+            const sheetKey = `sheet_${sheetIndex}`;
+            const sanitizedHeaders = [];
+            
+            // 处理headers
+            for (let i = 0; i < sheet.headers.length; i++) {
+                const header = sheet.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
+            
+            // 处理行数据
+            const dataRows = {};
+            sheet.rows.forEach((row, rowIndex) => {
+                const sanitizedRow = {};
+                for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                    const headerKey = `col_${colIndex}`;
+                    const cell = row[colIndex];
+                    const finalValue = totallyFlattenData(cell);
+                    sanitizedRow[headerKey] = finalValue;
+                }
+                dataRows[`row_${rowIndex}`] = sanitizedRow;
+            });
+            
+            processedData.sheets[sheetKey] = {
+                sheetName: sheet.sheetName,
+                headersList: sanitizedHeaders.join('|||'),
+                headersMap: {},
+                dataRows: dataRows,
+                totalRows: sheet.rows.length
+            };
+            
+            // 创建headers映射
+            for (let i = 0; i < sanitizedHeaders.length; i++) {
+                processedData.sheets[sheetKey].headersMap[`header_${i}`] = sanitizedHeaders[i];
+            }
+            
+            processedData.totalRows += sheet.rows.length;
+        });
+        
+        return processedData;
+    } else {
+        // 处理单工作表数据（原有逻辑）
+        const sanitizedHeaders = [];
+        if (Array.isArray(excelData.headers)) {
+            for (let i = 0; i < excelData.headers.length; i++) {
+                const header = excelData.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
+        }
+        
+        const sanitizedRows = [];
+        if (Array.isArray(excelData.rows)) {
+            for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
+                const row = excelData.rows[rowIndex];
+                const sanitizedRow = {};
+                
+                if (Array.isArray(row)) {
+                    for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                        const headerKey = `col_${colIndex}`;
+                        const cell = row[colIndex];
+                        const finalValue = totallyFlattenData(cell);
+                        sanitizedRow[headerKey] = finalValue;
+                    }
+                }
+                
+                sanitizedRows.push(sanitizedRow);
+            }
+        }
+        
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            sheetName: excelData.sheetName,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: false,
+            headersList: sanitizedHeaders.join('|||'),
+            headersMap: {},
+            dataRows: {},
+            totalRows: sanitizedRows.length
+        };
+        
+        // 创建headers映射
+        for (let i = 0; i < sanitizedHeaders.length; i++) {
+            processedData.headersMap[`header_${i}`] = sanitizedHeaders[i];
+        }
+        
+        // 创建数据行映射
+        for (let rowIndex = 0; rowIndex < sanitizedRows.length; rowIndex++) {
+            processedData.dataRows[`row_${rowIndex}`] = sanitizedRows[rowIndex];
+        }
+        
+        return processedData;
+    }
+}
+
+// 导出全局函数
+window.showLoginForm = showLoginForm;
+window.showRegisterForm = showRegisterForm;
+window.showStatusQuery = showStatusQuery;
+window.handleLogout = handleLogout;
+window.showUploadForm = showUploadForm;
+window.hideCodeModal = hideCodeModal;
+window.handleApprove = handleApprove;
+window.handleReject = handleReject;
+window.viewCode = viewCode;
+window.editCode = editCode;
+window.deleteCode = deleteCode;
+window.switchTab = switchTab;
+window.switchUserTab = switchUserTab;
+window.processExcelFile = processExcelFile;
+window.processAdminExcelFile = processAdminExcelFile;
+window.clearExcelPreview = clearExcelPreview;
+window.clearAdminExcelPreview = clearAdminExcelPreview;
+window.viewExcelFile = viewExcelFile;
+window.downloadExcelData = downloadExcelData;
+window.deleteExcelFile = deleteExcelFile;
+window.selectSheet = selectSheet;
+window.selectAllSheets = selectAllSheets;
+
+// 改进的Excel文件读取函数 - 支持多个sheet选择
+function readExcelFile(file, isAdmin = false) {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            console.log('📋 Excel工作簿信息:', {
+                sheetNames: workbook.SheetNames,
+                totalSheets: workbook.SheetNames.length
+            });
+            
+            // 如果有多个sheet，显示选择器
+            if (workbook.SheetNames.length > 1) {
+                showSheetSelector(workbook, file, isAdmin);
+            } else {
+                // 只有一个sheet，直接处理
+                processWorksheet(workbook, workbook.SheetNames[0], file, isAdmin);
+            }
             
         } catch (error) {
             console.error('Excel文件读取失败:', error);
@@ -1744,4 +2179,418 @@ function readExcelFile(file, isAdmin = false) {
     };
 
     reader.readAsArrayBuffer(file);
+}
+
+// 显示工作表选择器
+function showSheetSelector(workbook, file, isAdmin) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>选择工作表</h3>
+                <button onclick="this.closest('.modal').remove()" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>检测到多个工作表，请选择要上传的工作表：</p>
+                <div class="sheet-selector">
+                    ${workbook.SheetNames.map((sheetName, index) => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+                        const rowCount = range.e.r - range.s.r;
+                        const colCount = range.e.c - range.s.c + 1;
+                        
+                        return `
+                            <div class="sheet-option" onclick="selectSheet('${sheetName}', ${index})">
+                                <div class="sheet-info">
+                                    <h4>${sheetName}</h4>
+                                    <p>行数: ${rowCount}, 列数: ${colCount}</p>
+                                </div>
+                                <i class="ri-arrow-right-line"></i>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="modal-actions">
+                    <button onclick="selectAllSheets()" class="btn btn-primary">
+                        <i class="ri-stack-line"></i> 全部上传
+                    </button>
+                    <button onclick="this.closest('.modal').remove()" class="btn btn-secondary">取消</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    
+    // 保存工作簿信息到全局变量
+    window.currentWorkbook = workbook;
+    window.currentFile = file;
+    window.currentIsAdmin = isAdmin;
+}
+
+// 选择单个工作表
+function selectSheet(sheetName, index) {
+    const workbook = window.currentWorkbook;
+    const file = window.currentFile;
+    const isAdmin = window.currentIsAdmin;
+    
+    processWorksheet(workbook, sheetName, file, isAdmin);
+    
+    // 关闭选择器
+    document.querySelector('.modal').remove();
+}
+
+// 选择所有工作表
+function selectAllSheets() {
+    const workbook = window.currentWorkbook;
+    const file = window.currentFile;
+    const isAdmin = window.currentIsAdmin;
+    
+    // 处理所有工作表
+    const allSheetsData = [];
+    
+    workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1,
+            defval: '', 
+            raw: false  
+        });
+        
+        if (jsonData.length > 0) {
+            const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
+                if (header === null || header === undefined || header === '') {
+                    return `列${index + 1}`;
+                }
+                return String(header);
+            }) : [];
+
+            const cleanRows = jsonData.slice(1).map(row => {
+                if (!Array.isArray(row)) {
+                    return new Array(cleanHeaders.length).fill('');
+                }
+                return row.map(cell => {
+                    if (cell === null || cell === undefined) {
+                        return '';
+                    }
+                    if (typeof cell === 'object') {
+                        return JSON.stringify(cell);
+                    }
+                    return String(cell);
+                });
+            });
+
+            allSheetsData.push({
+                sheetName: sheetName,
+                headers: cleanHeaders,
+                rows: cleanRows
+            });
+        }
+    });
+
+    currentExcelData = {
+        fileName: file.name,
+        originalFile: file, // 保存原始文件
+        fileSize: file.size,
+        fileType: file.type,
+        lastModified: file.lastModified,
+        totalSheets: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        sheets: allSheetsData,
+        isMultiSheet: true,
+        isAdmin: isAdmin
+    };
+
+    console.log('✅ 多工作表Excel数据:', {
+        fileName: currentExcelData.fileName,
+        totalSheets: currentExcelData.totalSheets,
+        sheetNames: currentExcelData.sheetNames,
+        sheetsData: currentExcelData.sheets.map(sheet => ({
+            name: sheet.sheetName,
+            rows: sheet.rows.length,
+            cols: sheet.headers.length
+        }))
+    });
+
+    displayExcelPreview(isAdmin);
+    
+    // 关闭选择器
+    document.querySelector('.modal').remove();
+}
+
+// 处理单个工作表
+function processWorksheet(workbook, sheetName, file, isAdmin) {
+    const worksheet = workbook.Sheets[sheetName];
+    
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1,
+        defval: '', 
+        raw: false  
+    });
+    
+    if (jsonData.length === 0) {
+        alert('选择的工作表为空');
+        return;
+    }
+
+    const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
+        if (header === null || header === undefined || header === '') {
+            return `列${index + 1}`;
+        }
+        return String(header);
+    }) : [];
+
+    const cleanRows = jsonData.slice(1).map(row => {
+        if (!Array.isArray(row)) {
+            return new Array(cleanHeaders.length).fill('');
+        }
+        return row.map(cell => {
+            if (cell === null || cell === undefined) {
+                return '';
+            }
+            if (typeof cell === 'object') {
+                return JSON.stringify(cell);
+            }
+            return String(cell);
+        });
+    });
+
+    currentExcelData = {
+        fileName: file.name,
+        originalFile: file, // 保存原始文件
+        fileSize: file.size,
+        fileType: file.type,
+        lastModified: file.lastModified,
+        sheetName: sheetName,
+        totalSheets: workbook.SheetNames.length,
+        sheetNames: workbook.SheetNames,
+        data: [cleanHeaders, ...cleanRows],
+        headers: cleanHeaders,
+        rows: cleanRows,
+        isMultiSheet: false,
+        isAdmin: isAdmin
+    };
+
+    console.log('✅ 单工作表Excel数据:', {
+        fileName: currentExcelData.fileName,
+        sheetName: currentExcelData.sheetName,
+        totalSheets: currentExcelData.totalSheets,
+        headersCount: currentExcelData.headers.length,
+        rowsCount: currentExcelData.rows.length
+    });
+
+    displayExcelPreview(isAdmin);
+}
+
+// 更新预览显示函数
+function displayExcelPreview(isAdmin = false) {
+    const previewId = isAdmin ? 'adminExcelPreview' : 'excelPreview';
+    const containerId = isAdmin ? 'adminExcelTableContainer' : 'excelTableContainer';
+    
+    const previewDiv = document.getElementById(previewId);
+    const tableContainer = document.getElementById(containerId);
+    
+    if (!previewDiv || !tableContainer || !currentExcelData) return;
+
+    let tableHTML = `
+        <div class="file-info">
+            <p><strong>文件名:</strong> ${currentExcelData.fileName}</p>
+            <p><strong>文件大小:</strong> ${(currentExcelData.fileSize / 1024).toFixed(2)} KB</p>
+            <p><strong>总工作表数:</strong> ${currentExcelData.totalSheets}</p>
+    `;
+
+    if (currentExcelData.isMultiSheet) {
+        // 多工作表预览
+        tableHTML += `<p><strong>将要上传:</strong> 所有工作表 (${currentExcelData.sheets.length}个)</p></div>`;
+        
+        currentExcelData.sheets.forEach((sheet, index) => {
+            if (index < 3) { // 只显示前3个工作表的预览
+                tableHTML += `
+                    <div class="sheet-preview">
+                        <h4>工作表: ${sheet.sheetName}</h4>
+                        <p>数据行数: ${sheet.rows.length}, 列数: ${sheet.headers.length}</p>
+                        <table class="excel-table">
+                            <thead>
+                                <tr>
+                                    ${sheet.headers.map(header => 
+                                        `<th>${String(header || '未命名列')}</th>`
+                                    ).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sheet.rows.slice(0, 5).map(row => `
+                                    <tr>
+                                        ${sheet.headers.map((_, colIndex) => {
+                                            const cellValue = row[colIndex];
+                                            let displayValue = String(cellValue || '');
+                                            return `<td>${displayValue}</td>`;
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                                ${sheet.rows.length > 5 ? 
+                                    `<tr><td colspan="${sheet.headers.length}" style="text-align: center; color: #666;">... 还有 ${sheet.rows.length - 5} 行</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        });
+        
+        if (currentExcelData.sheets.length > 3) {
+            tableHTML += `<p style="text-align: center; color: #666;">... 还有 ${currentExcelData.sheets.length - 3} 个工作表</p>`;
+        }
+    } else {
+        // 单工作表预览
+        tableHTML += `
+            <p><strong>工作表:</strong> ${currentExcelData.sheetName}</p>
+            <p><strong>数据行数:</strong> ${currentExcelData.rows.length}</p>
+            <p><strong>列数:</strong> ${currentExcelData.headers.length}</p>
+        </div>
+        <table class="excel-table">
+            <thead>
+                <tr>
+                    ${currentExcelData.headers.map(header => 
+                        `<th>${String(header || '未命名列')}</th>`
+                    ).join('')}
+                </tr>
+            </thead>
+            <tbody>
+                ${currentExcelData.rows.slice(0, 10).map(row => `
+                    <tr>
+                        ${currentExcelData.headers.map((_, index) => {
+                            const cellValue = row[index];
+                            let displayValue = String(cellValue || '');
+                            return `<td>${displayValue}</td>`;
+                        }).join('')}
+                    </tr>
+                `).join('')}
+                ${currentExcelData.rows.length > 10 ? 
+                    `<tr><td colspan="${currentExcelData.headers.length}" style="text-align: center; color: #666;">... 还有 ${currentExcelData.rows.length - 10} 行数据</td></tr>` : ''}
+            </tbody>
+        </table>
+        `;
+    }
+    
+    tableContainer.innerHTML = tableHTML;
+}
+
+// 更新数据处理函数以支持多工作表
+function processExcelDataForFirestore(excelData) {
+    console.log('开始处理Excel数据，原始数据结构:', excelData);
+    
+    if (excelData.isMultiSheet) {
+        // 处理多工作表数据
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: true,
+            sheets: {},
+            totalRows: 0
+        };
+        
+        // 处理每个工作表
+        excelData.sheets.forEach((sheet, sheetIndex) => {
+            const sheetKey = `sheet_${sheetIndex}`;
+            const sanitizedHeaders = [];
+            
+            // 处理headers
+            for (let i = 0; i < sheet.headers.length; i++) {
+                const header = sheet.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
+            
+            // 处理行数据
+            const dataRows = {};
+            sheet.rows.forEach((row, rowIndex) => {
+                const sanitizedRow = {};
+                for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                    const headerKey = `col_${colIndex}`;
+                    const cell = row[colIndex];
+                    const finalValue = totallyFlattenData(cell);
+                    sanitizedRow[headerKey] = finalValue;
+                }
+                dataRows[`row_${rowIndex}`] = sanitizedRow;
+            });
+            
+            processedData.sheets[sheetKey] = {
+                sheetName: sheet.sheetName,
+                headersList: sanitizedHeaders.join('|||'),
+                headersMap: {},
+                dataRows: dataRows,
+                totalRows: sheet.rows.length
+            };
+            
+            // 创建headers映射
+            for (let i = 0; i < sanitizedHeaders.length; i++) {
+                processedData.sheets[sheetKey].headersMap[`header_${i}`] = sanitizedHeaders[i];
+            }
+            
+            processedData.totalRows += sheet.rows.length;
+        });
+        
+        return processedData;
+    } else {
+        // 处理单工作表数据（原有逻辑）
+        const sanitizedHeaders = [];
+        if (Array.isArray(excelData.headers)) {
+            for (let i = 0; i < excelData.headers.length; i++) {
+                const header = excelData.headers[i];
+                let cleanHeader = String(header || `列${i + 1}`);
+                sanitizedHeaders.push(cleanHeader);
+            }
+        }
+        
+        const sanitizedRows = [];
+        if (Array.isArray(excelData.rows)) {
+            for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
+                const row = excelData.rows[rowIndex];
+                const sanitizedRow = {};
+                
+                if (Array.isArray(row)) {
+                    for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                        const headerKey = `col_${colIndex}`;
+                        const cell = row[colIndex];
+                        const finalValue = totallyFlattenData(cell);
+                        sanitizedRow[headerKey] = finalValue;
+                    }
+                }
+                
+                sanitizedRows.push(sanitizedRow);
+            }
+        }
+        
+        const processedData = {
+            fileName: String(excelData.fileName || '未知文件'),
+            fileSize: excelData.fileSize,
+            fileType: excelData.fileType,
+            lastModified: excelData.lastModified,
+            sheetName: excelData.sheetName,
+            totalSheets: excelData.totalSheets,
+            sheetNames: excelData.sheetNames.join('|||'),
+            isMultiSheet: false,
+            headersList: sanitizedHeaders.join('|||'),
+            headersMap: {},
+            dataRows: {},
+            totalRows: sanitizedRows.length
+        };
+        
+        // 创建headers映射
+        for (let i = 0; i < sanitizedHeaders.length; i++) {
+            processedData.headersMap[`header_${i}`] = sanitizedHeaders[i];
+        }
+        
+        // 创建数据行映射
+        for (let rowIndex = 0; rowIndex < sanitizedRows.length; rowIndex++) {
+            processedData.dataRows[`row_${rowIndex}`] = sanitizedRows[rowIndex];
+        }
+        
+        return processedData;
+    }
 }

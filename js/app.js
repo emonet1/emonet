@@ -15,10 +15,10 @@ const firebaseConfig = {
     measurementId: "G-LNPHXZH1C4"
 };
 
-// 初始化 Firebase
+// 初始化Firebase
 try {
     firebase.initializeApp(firebaseConfig);
-    console.log('Firebase 初始化成功 -', CURRENT_TIME);
+    console.log('Firebase 初始化成功');
 } catch (error) {
     console.error('Firebase 初始化失败:', error);
     alert('系统初始化失败，请刷新页面重试');
@@ -26,6 +26,7 @@ try {
 
 const db = firebase.firestore();
 let currentUser = null;
+let currentExcelData = null;
 
 // 工具函数
 function showLoading(show = true) {
@@ -103,6 +104,7 @@ function showStatusQuery() {
         statusQueryForm.style.display = 'block';
     }
 }
+
 // 登录处理
 async function handleLogin(event) {
     event.preventDefault();
@@ -303,7 +305,7 @@ async function handleStatusQuery(event) {
                 <h3>查询结果</h3>
                 <div class="result-content">
                     <p><strong>用户名:</strong> ${userData.username}</p>
-                    <p><strong>姓名:</strong> ${userData.name}</p>  <!-- 新增这一行 -->
+                    <p><strong>姓名:</strong> ${userData.name}</p>
                     <p><strong>单位:</strong> ${userData.company}</p>
                     <p><strong>状态:</strong> <span class="${statusClass}">${statusText}</span></p>
                     <p><strong>申请时间:</strong> ${userData.createdAt}</p>
@@ -318,6 +320,7 @@ async function handleStatusQuery(event) {
         showLoading(false);
     }
 }
+
 // 管理员功能
 async function loadPendingUsers() {
     showLoading(true);
@@ -348,7 +351,7 @@ async function loadPendingUsers() {
                         <h3>${user.username}</h3>
                     </div>
                     <div class="user-card-content">
-                        <p><i class="ri-user-line"></i> 姓名: ${user.name}</p>  <!-- 新增这一行 -->
+                        <p><i class="ri-user-line"></i> 姓名: ${user.name}</p>
                         <p><i class="ri-building-line"></i> 单位: ${user.company}</p>
                         <p><i class="ri-phone-line"></i> 电话: ${user.phone}</p>
                         <p><i class="ri-time-line"></i> 申请时间: ${user.createdAt}</p>
@@ -695,8 +698,8 @@ async function loadAdminCodeList() {
 }
 
 function initializeCodeListFilters(prefix = '') {
-    const searchInput = document.getElementById(`${prefix}searchCode`.trim());
-    const languageFilter = document.getElementById(`${prefix}languageFilter`.trim());
+    const searchInput = document.getElementById(`${prefix}SearchCode`);
+    const languageFilter = document.getElementById(`${prefix}LanguageFilter`);
     
     if (searchInput) {
         searchInput.addEventListener('input', (e) => filterCodeCards(prefix));
@@ -708,8 +711,8 @@ function initializeCodeListFilters(prefix = '') {
 }
 
 function filterCodeCards(prefix = '') {
-    const searchInput = document.getElementById(`${prefix}searchCode`.trim());
-    const languageFilter = document.getElementById(`${prefix}languageFilter`.trim());
+    const searchInput = document.getElementById(`${prefix}SearchCode`);
+    const languageFilter = document.getElementById(`${prefix}LanguageFilter`);
     const codeCards = document.querySelectorAll('.code-card');
 
     const searchText = searchInput ? searchInput.value.toLowerCase() : '';
@@ -830,30 +833,462 @@ async function deleteCode(codeId) {
     }
 }
 
+// Excel文件处理功能
+function initializeExcelUpload() {
+    const fileInput = document.getElementById('excelFileInput');
+    const adminFileInput = document.getElementById('adminExcelFileInput');
+    
+    if (fileInput) {
+        fileInput.addEventListener('change', handleExcelFileSelect);
+    }
+    
+    if (adminFileInput) {
+        adminFileInput.addEventListener('change', handleAdminExcelFileSelect);
+    }
+}
+
+function handleExcelFileSelect(event) {
+    handleExcelFileSelectCommon(event, false);
+}
+
+function handleAdminExcelFileSelect(event) {
+    handleExcelFileSelectCommon(event, true);
+}
+
+function handleExcelFileSelectCommon(event, isAdmin) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // 验证文件类型
+    const allowedTypes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel'
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+        alert('请选择有效的Excel文件 (.xlsx 或 .xls)');
+        return;
+    }
+
+    // 验证文件大小 (最大5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        alert('文件大小不能超过5MB');
+        return;
+    }
+
+    readExcelFile(file, isAdmin);
+}
+
+function readExcelFile(file, isAdmin = false) {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            // 获取第一个工作表
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // 转换为JSON数据
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (jsonData.length === 0) {
+                alert('Excel文件为空');
+                return;
+            }
+
+            currentExcelData = {
+                fileName: file.name,
+                data: jsonData,
+                headers: jsonData[0] || [],
+                rows: jsonData.slice(1),
+                isAdmin: isAdmin
+            };
+
+            displayExcelPreview(isAdmin);
+            
+        } catch (error) {
+            console.error('Excel文件读取失败:', error);
+            alert('Excel文件读取失败，请检查文件格式');
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+function displayExcelPreview(isAdmin = false) {
+    const previewId = isAdmin ? 'adminExcelPreview' : 'excelPreview';
+    const containerId = isAdmin ? 'adminExcelTableContainer' : 'excelTableContainer';
+    
+    const previewDiv = document.getElementById(previewId);
+    const tableContainer = document.getElementById(containerId);
+    
+    if (!previewDiv || !tableContainer || !currentExcelData) return;
+
+    // 创建预览表格
+    let tableHTML = `
+        <div class="file-info">
+            <p><strong>文件名:</strong> ${currentExcelData.fileName}</p>
+            <p><strong>数据行数:</strong> ${currentExcelData.rows.length}</p>
+            <p><strong>列数:</strong> ${currentExcelData.headers.length}</p>
+        </div>
+        <table class="excel-table">
+            <thead>
+                <tr>
+                    ${currentExcelData.headers.map(header => 
+                        `<th>${header || '未命名列'}</th>`
+                    ).join('')}
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    // 只显示前10行数据作为预览
+    const previewRows = currentExcelData.rows.slice(0, 10);
+    previewRows.forEach(row => {
+        tableHTML += '<tr>';
+        currentExcelData.headers.forEach((_, index) => {
+            tableHTML += `<td>${row[index] || ''}</td>`;
+        });
+        tableHTML += '</tr>';
+    });
+
+    if (currentExcelData.rows.length > 10) {
+        tableHTML += `
+            <tr>
+                <td colspan="${currentExcelData.headers.length}" style="text-align: center; color: #666; font-style: italic;">
+                    ... 还有 ${currentExcelData.rows.length - 10} 行数据
+                </td>
+            </tr>
+        `;
+    }
+
+    tableHTML += '</tbody></table>';
+    
+    tableContainer.innerHTML = tableHTML;
+    previewDiv.style.display = 'block';
+}
+
+async function processExcelFile() {
+    await processExcelFileCommon(false);
+}
+
+async function processAdminExcelFile() {
+    await processExcelFileCommon(true);
+}
+
+async function processExcelFileCommon(isAdmin) {
+    if (!currentExcelData) {
+        alert('请先选择Excel文件');
+        return;
+    }
+
+    showLoading(true);
+    try {
+        // 将Excel数据保存到Firestore
+        const excelDoc = {
+            fileName: currentExcelData.fileName,
+            headers: currentExcelData.headers,
+            data: currentExcelData.rows,
+            totalRows: currentExcelData.rows.length,
+            uploadedAt: CURRENT_TIME,
+            uploadedBy: currentUser.username,
+            fileType: 'excel'
+        };
+
+        const docRef = await db.collection('excel_files').add(excelDoc);
+        
+        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${currentExcelData.rows.length}`);
+        
+        if (isAdmin) {
+            clearAdminExcelPreview();
+            await loadAdminExcelList();
+        } else {
+            clearExcelPreview();
+            await loadUserExcelList();
+        }
+
+    } catch (error) {
+        console.error('Excel文件上传失败:', error);
+        alert('上传失败: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+function clearExcelPreview() {
+    currentExcelData = null;
+    const previewDiv = document.getElementById('excelPreview');
+    const fileInput = document.getElementById('excelFileInput');
+    
+    if (previewDiv) previewDiv.style.display = 'none';
+    if (fileInput) fileInput.value = '';
+}
+
+function clearAdminExcelPreview() {
+    currentExcelData = null;
+    const previewDiv = document.getElementById('adminExcelPreview');
+    const fileInput = document.getElementById('adminExcelFileInput');
+    
+    if (previewDiv) previewDiv.style.display = 'none';
+    if (fileInput) fileInput.value = '';
+}
+
+async function loadUserExcelList() {
+    showLoading(true);
+    try {
+        const snapshot = await db.collection('excel_files')
+            .where('uploadedBy', '==', currentUser.username)
+            .orderBy('uploadedAt', 'desc')
+            .get();
+
+        displayExcelFileList(snapshot, 'userExcelList', false);
+        
+    } catch (error) {
+        console.error('加载Excel文件列表失败:', error);
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function loadAdminExcelList() {
+    showLoading(true);
+    try {
+        const snapshot = await db.collection('excel_files')
+            .orderBy('uploadedAt', 'desc')
+            .get();
+
+        displayExcelFileList(snapshot, 'adminExcelList', true);
+        
+    } catch (error) {
+        console.error('加载Excel文件列表失败:', error);
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displayExcelFileList(snapshot, containerId, isAdmin) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (snapshot.empty) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="ri-file-excel-2-line" style="font-size: 48px; color: #666;"></i>
+                <p>暂无Excel文件</p>
+            </div>
+        `;
+        return;
+    }
+
+    const filesHTML = snapshot.docs.map(doc => {
+        const file = doc.data();
+        return `
+            <div class="file-card">
+                <div class="file-header">
+                    <i class="ri-file-excel-2-line" style="color: #28a745; font-size: 24px;"></i>
+                    <span class="file-name">${file.fileName}</span>
+                </div>
+                <div class="file-details">
+                    <p>上传者: ${file.uploadedBy}</p>
+                    <p>数据行数: ${file.totalRows}</p>
+                    <p>上传时间: ${formatDate(file.uploadedAt)}</p>
+                </div>
+                <div class="file-actions">
+                    <button onclick="viewExcelFile('${doc.id}')" class="btn btn-sm btn-primary">查看</button>
+                    <button onclick="downloadExcelData('${doc.id}')" class="btn btn-sm btn-secondary">下载</button>
+                    ${isAdmin || file.uploadedBy === currentUser.username ? 
+                        `<button onclick="deleteExcelFile('${doc.id}')" class="btn btn-sm btn-danger">删除</button>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = filesHTML;
+}
+
+async function viewExcelFile(fileId) {
+    try {
+        const doc = await db.collection('excel_files').doc(fileId).get();
+        if (!doc.exists) {
+            alert('文件不存在');
+            return;
+        }
+
+        const fileData = doc.data();
+        
+        // 创建查看窗口
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content excel-view-modal">
+                <div class="modal-header">
+                    <h3>${fileData.fileName}</h3>
+                    <button onclick="this.closest('.modal').remove()" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="file-info">
+                        <p><strong>上传者:</strong> ${fileData.uploadedBy}</p>
+                        <p><strong>上传时间:</strong> ${formatDate(fileData.uploadedAt)}</p>
+                        <p><strong>数据行数:</strong> ${fileData.totalRows}</p>
+                    </div>
+                    <div class="excel-data-container">
+                        <table class="excel-table">
+                            <thead>
+                                <tr>
+                                    ${fileData.headers.map(header => 
+                                        `<th>${header || '未命名列'}</th>`
+                                    ).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${fileData.data.slice(0, 50).map(row => `
+                                    <tr>
+                                        ${fileData.headers.map((_, index) => 
+                                            `<td>${row[index] || ''}</td>`
+                                        ).join('')}
+                                    </tr>
+                                `).join('')}
+                                ${fileData.data.length > 50 ? 
+                                    `<tr><td colspan="${fileData.headers.length}" style="text-align: center; color: #666;">... 还有 ${fileData.data.length - 50} 行数据</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+    } catch (error) {
+        console.error('查看文件失败:', error);
+        alert('查看文件失败: ' + error.message);
+    }
+}
+
+async function downloadExcelData(fileId) {
+    try {
+        const doc = await db.collection('excel_files').doc(fileId).get();
+        if (!doc.exists) {
+            alert('文件不存在');
+            return;
+        }
+
+        const fileData = doc.data();
+        
+        // 创建新的工作簿
+        const wb = XLSX.utils.book_new();
+        const wsData = [fileData.headers, ...fileData.data];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        
+        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+        
+        // 下载文件
+        XLSX.writeFile(wb, fileData.fileName);
+
+    } catch (error) {
+        console.error('下载失败:', error);
+        alert('下载失败: ' + error.message);
+    }
+}
+
+async function deleteExcelFile(fileId) {
+    if (!confirm('确定要删除这个Excel文件吗？')) return;
+
+    showLoading(true);
+    try {
+        await db.collection('excel_files').doc(fileId).delete();
+        alert('文件已删除');
+        
+        // 刷新列表
+        if (currentUser.role === 'admin') {
+            await loadAdminExcelList();
+        } else {
+            await loadUserExcelList();
+        }
+
+    } catch (error) {
+        console.error('删除失败:', error);
+        alert('删除失败: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
 function handleLogout() {
     currentUser = null;
     showLoginForm();
 }
 
+// 标签页切换功能
 function switchTab(tabId) {
-    const tabs = document.querySelectorAll('.tab');
-    const panels = document.querySelectorAll('.panel');
+    // 隐藏所有管理员标签内容
+    const adminTabs = ['pendingUsers', 'codeFiles', 'excelFiles'];
+    adminTabs.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.classList.remove('active');
+    });
     
-    tabs.forEach(tab => tab.classList.remove('active'));
-    panels.forEach(panel => panel.classList.remove('active'));
+    // 移除所有管理员标签按钮的active类
+    document.querySelectorAll('#adminPanel .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
     
-    const selectedTab = document.querySelector(`[onclick="switchTab('${tabId}')"]`);
-    const selectedPanel = document.getElementById(tabId);
-    
-    if (selectedTab && selectedPanel) {
+    // 显示选中的标签内容
+    const selectedTab = document.getElementById(tabId);
+    if (selectedTab) {
         selectedTab.classList.add('active');
-        selectedPanel.classList.add('active');
     }
-
+    
+    // 添加active类到对应按钮
+    const selectedBtn = document.querySelector(`#adminPanel [onclick="switchTab('${tabId}')"]`);
+    if (selectedBtn) {
+        selectedBtn.classList.add('active');
+    }
+    
+    // 根据标签加载相应数据
     if (tabId === 'codeFiles') {
         loadAdminCodeList();
     } else if (tabId === 'pendingUsers') {
         loadPendingUsers();
+    } else if (tabId === 'excelFiles') {
+        loadAdminExcelList();
+    }
+}
+
+function switchUserTab(tabId) {
+    // 隐藏所有用户标签内容
+    const userTabs = ['codeTab', 'excelTab'];
+    userTabs.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.classList.remove('active');
+    });
+    
+    // 移除所有用户标签按钮的active类
+    document.querySelectorAll('#userPanel .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // 显示选中的标签内容
+    const selectedTab = document.getElementById(tabId);
+    if (selectedTab) {
+        selectedTab.classList.add('active');
+    }
+    
+    // 添加active类到对应按钮
+    const selectedBtn = document.querySelector(`#userPanel [onclick="switchUserTab('${tabId}')"]`);
+    if (selectedBtn) {
+        selectedBtn.classList.add('active');
+    }
+    
+    // 根据标签加载相应数据
+    if (tabId === 'codeTab') {
+        loadUserCodeList();
+    } else if (tabId === 'excelTab') {
+        loadUserExcelList();
     }
 }
 
@@ -873,6 +1308,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (statusQueryForm) statusQueryForm.addEventListener('submit', handleStatusQuery);
     if (codeForm) codeForm.addEventListener('submit', handleCodeSubmit);
 
+    // 初始化Excel上传功能
+    initializeExcelUpload();
+
     // 显示登录表单
     showLoginForm();
 });
@@ -890,3 +1328,11 @@ window.viewCode = viewCode;
 window.editCode = editCode;
 window.deleteCode = deleteCode;
 window.switchTab = switchTab;
+window.switchUserTab = switchUserTab;
+window.processExcelFile = processExcelFile;
+window.processAdminExcelFile = processAdminExcelFile;
+window.clearExcelPreview = clearExcelPreview;
+window.clearAdminExcelPreview = clearAdminExcelPreview;
+window.viewExcelFile = viewExcelFile;
+window.downloadExcelData = downloadExcelData;
+window.deleteExcelFile = deleteExcelFile;

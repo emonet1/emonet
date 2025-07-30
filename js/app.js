@@ -1194,13 +1194,13 @@ async function processExcelFileCommon(isAdmin) {
         
         console.log('📋 处理后数据概要:', processedData);
         
-        // 创建最终的文档对象 - 使用Map替代数组来存储headers
+        // 创建最终的文档对象 - 完全消除所有数组结构
         const excelDoc = {
             fileName: processedData.fileName,
-            // 将headers转换为对象而不是数组，避免任何数组嵌套
             headersMap: {},
             headersList: processedData.headers.join('|||'), // 使用字符串存储headers
-            data: processedData.rows,
+            // 将数据行数组转换为单个对象，每行用索引作为key
+            dataRows: {},
             totalRows: processedData.totalRows,
             uploadedAt: CURRENT_TIME,
             uploadedBy: currentUser.username,
@@ -1212,11 +1212,18 @@ async function processExcelFileCommon(isAdmin) {
             excelDoc.headersMap[`header_${i}`] = processedData.headers[i];
         }
 
+        // 将数据行数组转换为对象，彻底消除数组嵌套
+        for (let rowIndex = 0; rowIndex < processedData.rows.length; rowIndex++) {
+            const rowData = processedData.rows[rowIndex];
+            excelDoc.dataRows[`row_${rowIndex}`] = rowData;
+        }
+
         console.log('📝 最终保存的文档结构:', {
             fileName: `"${excelDoc.fileName}" (${typeof excelDoc.fileName})`,
             headersMapType: typeof excelDoc.headersMap,
             headersListType: typeof excelDoc.headersList,
-            dataRowsCount: `${excelDoc.data.length} (${typeof excelDoc.data})`,
+            dataRowsType: typeof excelDoc.dataRows,
+            dataRowsIsArray: Array.isArray(excelDoc.dataRows),
             totalRows: `${excelDoc.totalRows} (${typeof excelDoc.totalRows})`,
             uploadedAt: `"${excelDoc.uploadedAt}" (${typeof excelDoc.uploadedAt})`,
             uploadedBy: `"${excelDoc.uploadedBy}" (${typeof excelDoc.uploadedBy})`,
@@ -1284,6 +1291,21 @@ async function viewExcelFile(fileId) {
             headers = headerKeys.map(key => fileData.headersMap[key]);
         }
         
+        // 处理数据行 - 支持新旧格式
+        let dataRows = [];
+        if (fileData.dataRows) {
+            // 新格式：从对象恢复数据行
+            const rowKeys = Object.keys(fileData.dataRows).sort((a, b) => {
+                const aIndex = parseInt(a.split('_')[1]);
+                const bIndex = parseInt(b.split('_')[1]);
+                return aIndex - bIndex;
+            });
+            dataRows = rowKeys.map(key => fileData.dataRows[key]);
+        } else if (fileData.data) {
+            // 旧格式：直接使用数据数组
+            dataRows = fileData.data;
+        }
+        
         // 创建查看窗口
         const modal = document.createElement('div');
         modal.className = 'modal';
@@ -1310,7 +1332,7 @@ async function viewExcelFile(fileId) {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${fileData.data.slice(0, 50).map(row => `
+                                ${dataRows.slice(0, 50).map(row => `
                                     <tr>
                                         ${headers.map((_, index) => {
                                             const colKey = `col_${index}`;
@@ -1329,8 +1351,8 @@ async function viewExcelFile(fileId) {
                                         }).join('')}
                                     </tr>
                                 `).join('')}
-                                ${fileData.data.length > 50 ? 
-                                    `<tr><td colspan="${headers.length}" style="text-align: center; color: #666;">... 还有 ${fileData.data.length - 50} 行数据</td></tr>` : ''}
+                                ${dataRows.length > 50 ? 
+                                    `<tr><td colspan="${headers.length}" style="text-align: center; color: #666;">... 还有 ${dataRows.length - 50} 行数据</td></tr>` : ''}
                             </tbody>
                         </table>
                     </div>
@@ -1372,9 +1394,24 @@ async function downloadExcelData(fileId) {
             headers = headerKeys.map(key => fileData.headersMap[key]);
         }
         
+        // 处理数据行 - 支持新旧格式
+        let dataRows = [];
+        if (fileData.dataRows) {
+            // 新格式：从对象恢复数据行
+            const rowKeys = Object.keys(fileData.dataRows).sort((a, b) => {
+                const aIndex = parseInt(a.split('_')[1]);
+                const bIndex = parseInt(b.split('_')[1]);
+                return aIndex - bIndex;
+            });
+            dataRows = rowKeys.map(key => fileData.dataRows[key]);
+        } else if (fileData.data) {
+            // 旧格式：直接使用数据数组
+            dataRows = fileData.data;
+        }
+        
         // 将对象数组转换回二维数组格式
         const wsData = [headers];
-        fileData.data.forEach(row => {
+        dataRows.forEach(row => {
             const rowArray = [];
             headers.forEach((_, index) => {
                 const colKey = `col_${index}`;

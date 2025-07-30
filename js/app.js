@@ -105,20 +105,30 @@ function totallyFlattenData(data) {
 function processExcelDataForFirestore(excelData) {
     console.log('开始处理Excel数据，原始数据结构:', excelData);
     
-    // 处理headers - 确保全部是字符串
+    // 强化headers处理 - 确保每个header都是字符串
     const sanitizedHeaders = [];
     if (Array.isArray(excelData.headers)) {
         for (let i = 0; i < excelData.headers.length; i++) {
             const header = excelData.headers[i];
+            let cleanHeader = '';
+            
             if (header === null || header === undefined || header === '') {
-                sanitizedHeaders.push(`列${i + 1}`);
+                cleanHeader = `列${i + 1}`;
+            } else if (Array.isArray(header)) {
+                // 如果header本身是数组，转换为字符串
+                cleanHeader = `列${i + 1}_${JSON.stringify(header)}`;
+            } else if (typeof header === 'object' && header !== null) {
+                // 如果header是对象，转换为字符串
+                cleanHeader = `列${i + 1}_${JSON.stringify(header)}`;
             } else {
-                sanitizedHeaders.push(String(header));
+                cleanHeader = String(header);
             }
+            
+            sanitizedHeaders.push(cleanHeader);
         }
     }
     
-    // 改进的行数据处理 - 将每行数据转换为对象而不是数组
+    // 彻底扁平化行数据处理
     const sanitizedRows = [];
     if (Array.isArray(excelData.rows)) {
         for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
@@ -126,14 +136,20 @@ function processExcelDataForFirestore(excelData) {
             const sanitizedRow = {};
             
             if (Array.isArray(row)) {
-                // 将行数据转换为对象，使用header作为key
+                // 将行数据转换为对象，使用索引作为key
                 for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
-                    const headerKey = `col_${colIndex}`;  // 使用索引作为key避免特殊字符
+                    const headerKey = `col_${colIndex}`;
                     const cell = row[colIndex];
                     const flattenedCell = totallyFlattenData(cell);
-                    sanitizedRow[headerKey] = flattenedCell;
                     
-                    console.log(`处理单元格[${rowIndex}][${colIndex}]:`, typeof cell, '=>', typeof flattenedCell, flattenedCell);
+                    // 二次验证：确保flattenedCell不是数组或对象
+                    let finalValue = flattenedCell;
+                    if (Array.isArray(finalValue) || (typeof finalValue === 'object' && finalValue !== null)) {
+                        finalValue = JSON.stringify(finalValue);
+                    }
+                    
+                    sanitizedRow[headerKey] = finalValue;
+                    console.log(`处理单元格[${rowIndex}][${colIndex}]:`, typeof cell, '=>', typeof finalValue, finalValue);
                 }
             } else {
                 // 如果行不是数组，创建空对象
@@ -150,7 +166,7 @@ function processExcelDataForFirestore(excelData) {
     const processedData = {
         fileName: String(excelData.fileName || '未知文件'),
         headers: sanitizedHeaders,
-        rows: sanitizedRows,  // 现在是对象数组而不是二维数组
+        rows: sanitizedRows,
         totalRows: sanitizedRows.length
     };
     
@@ -170,43 +186,54 @@ function processExcelDataForFirestore(excelData) {
     return processedData;
 }
 
-// 改进的数据验证函数
+// 更严格的数据验证函数
 function strictValidateFirestoreData(data, path = '') {
     console.log(`验证路径 ${path}:`, typeof data, Array.isArray(data) ? '数组' : '非数组');
     
     if (Array.isArray(data)) {
+        // 验证数组中的每个元素
         for (let i = 0; i < data.length; i++) {
             const item = data[i];
             const currentPath = `${path}[${i}]`;
             
-            // 检查数组元素是否为数组
+            // 严格检查：数组元素不能是数组或复杂对象
             if (Array.isArray(item)) {
                 console.error(`❌ 发现嵌套数组在路径: ${currentPath}`, item);
                 return false;
             }
             
-            // 递归检查对象内部
+            // 检查对象类型
             if (typeof item === 'object' && item !== null) {
+                // 只允许简单对象，不允许嵌套数组
                 if (!strictValidateFirestoreData(item, currentPath)) {
                     return false;
                 }
             }
         }
     } else if (typeof data === 'object' && data !== null) {
+        // 验证对象的每个属性
         for (const [key, value] of Object.entries(data)) {
             const currentPath = path ? `${path}.${key}` : key;
             
-            // 检查对象属性值是否为数组
+            // 检查属性值类型
             if (Array.isArray(value)) {
-                // 只允许基本类型的数组
+                // 数组值必须只包含基本类型
                 for (let i = 0; i < value.length; i++) {
                     const arrayItem = value[i];
-                    if (Array.isArray(arrayItem) || (typeof arrayItem === 'object' && arrayItem !== null)) {
-                        console.error(`❌ 发现嵌套结构在数组路径: ${currentPath}[${i}]`, arrayItem);
+                    const arrayPath = `${currentPath}[${i}]`;
+                    
+                    if (Array.isArray(arrayItem)) {
+                        console.error(`❌ 发现嵌套数组在路径: ${arrayPath}`, arrayItem);
+                        return false;
+                    }
+                    
+                    if (typeof arrayItem === 'object' && arrayItem !== null) {
+                        console.error(`❌ 发现数组中包含对象在路径: ${arrayPath}`, arrayItem);
                         return false;
                     }
                 }
             } else if (typeof value === 'object' && value !== null) {
+                // 递归验证嵌套对象
                 if (!strictValidateFirestoreData(value, currentPath)) {
                     return false;
                 }
@@ -1167,28 +1194,28 @@ async function processExcelFileCommon(isAdmin) {
         
         console.log('📋 处理后数据概要:', processedData);
         
-        // 严格验证处理后的数据
-        console.log('🔍 开始严格验证数据结构...');
-        if (!strictValidateFirestoreData(processedData)) {
-            throw new Error('❌ 数据验证失败：仍然包含不支持的嵌套结构');
-        }
-        
-        console.log('✅ 数据验证通过，准备保存到Firestore');
-
-        // 创建最终的文档对象 - 确保所有字段都是基本类型
+        // 创建最终的文档对象 - 使用Map替代数组来存储headers
         const excelDoc = {
-            fileName: processedData.fileName,           // string
-            headers: processedData.headers,             // array of strings
-            data: processedData.rows,                   // array of objects (not arrays)
-            totalRows: processedData.totalRows,         // number
-            uploadedAt: CURRENT_TIME,                   // string
-            uploadedBy: currentUser.username,           // string
-            fileType: 'excel'                           // string
+            fileName: processedData.fileName,
+            // 将headers转换为对象而不是数组，避免任何数组嵌套
+            headersMap: {},
+            headersList: processedData.headers.join('|||'), // 使用字符串存储headers
+            data: processedData.rows,
+            totalRows: processedData.totalRows,
+            uploadedAt: CURRENT_TIME,
+            uploadedBy: currentUser.username,
+            fileType: 'excel'
         };
+        
+        // 创建headers映射
+        for (let i = 0; i < processedData.headers.length; i++) {
+            excelDoc.headersMap[`header_${i}`] = processedData.headers[i];
+        }
 
         console.log('📝 最终保存的文档结构:', {
             fileName: `"${excelDoc.fileName}" (${typeof excelDoc.fileName})`,
-            headersCount: `${excelDoc.headers.length} (${typeof excelDoc.headers})`,
+            headersMapType: typeof excelDoc.headersMap,
+            headersListType: typeof excelDoc.headersList,
             dataRowsCount: `${excelDoc.data.length} (${typeof excelDoc.data})`,
             totalRows: `${excelDoc.totalRows} (${typeof excelDoc.totalRows})`,
             uploadedAt: `"${excelDoc.uploadedAt}" (${typeof excelDoc.uploadedAt})`,
@@ -1196,11 +1223,13 @@ async function processExcelFileCommon(isAdmin) {
             fileType: `"${excelDoc.fileType}" (${typeof excelDoc.fileType})`
         });
 
-        // 最后一次验证
-        console.log('🔍 最终验证完整文档...');
+        // 严格验证处理后的数据
+        console.log('🔍 开始严格验证数据结构...');
         if (!strictValidateFirestoreData(excelDoc)) {
-            throw new Error('❌ 最终文档验证失败');
+            throw new Error('❌ 数据验证失败：仍然包含不支持的嵌套结构');
         }
+        
+        console.log('✅ 数据验证通过，准备保存到Firestore');
 
         console.log('💾 开始保存到Firestore...');
         const docRef = await db.collection('excel_files').add(excelDoc);
@@ -1237,6 +1266,24 @@ async function viewExcelFile(fileId) {
 
         const fileData = doc.data();
         
+        // 处理headers - 支持新旧格式
+        let headers = [];
+        if (fileData.headersList) {
+            // 新格式：从字符串恢复headers
+            headers = fileData.headersList.split('|||');
+        } else if (fileData.headers) {
+            // 旧格式：直接使用headers数组
+            headers = fileData.headers;
+        } else if (fileData.headersMap) {
+            // 从headersMap恢复headers
+            const headerKeys = Object.keys(fileData.headersMap).sort((a, b) => {
+                const aIndex = parseInt(a.split('_')[1]);
+                const bIndex = parseInt(b.split('_')[1]);
+                return aIndex - bIndex;
+            });
+            headers = headerKeys.map(key => fileData.headersMap[key]);
+        }
+        
         // 创建查看窗口
         const modal = document.createElement('div');
         modal.className = 'modal';
@@ -1257,7 +1304,7 @@ async function viewExcelFile(fileId) {
                         <table class="excel-table">
                             <thead>
                                 <tr>
-                                    ${fileData.headers.map(header => 
+                                    ${headers.map(header => 
                                         `<th>${String(header || '未命名列')}</th>`
                                     ).join('')}
                                 </tr>
@@ -1265,7 +1312,7 @@ async function viewExcelFile(fileId) {
                             <tbody>
                                 ${fileData.data.slice(0, 50).map(row => `
                                     <tr>
-                                        ${fileData.headers.map((_, index) => {
+                                        ${headers.map((_, index) => {
                                             const colKey = `col_${index}`;
                                             const cellValue = row[colKey];
                                             let displayValue = '';
@@ -1283,7 +1330,7 @@ async function viewExcelFile(fileId) {
                                     </tr>
                                 `).join('')}
                                 ${fileData.data.length > 50 ? 
-                                    `<tr><td colspan="${fileData.headers.length}" style="text-align: center; color: #666;">... 还有 ${fileData.data.length - 50} 行数据</td></tr>` : ''}
+                                    `<tr><td colspan="${headers.length}" style="text-align: center; color: #666;">... 还有 ${fileData.data.length - 50} 行数据</td></tr>` : ''}
                             </tbody>
                         </table>
                     </div>
@@ -1310,11 +1357,26 @@ async function downloadExcelData(fileId) {
 
         const fileData = doc.data();
         
+        // 处理headers - 支持新旧格式
+        let headers = [];
+        if (fileData.headersList) {
+            headers = fileData.headersList.split('|||');
+        } else if (fileData.headers) {
+            headers = fileData.headers;
+        } else if (fileData.headersMap) {
+            const headerKeys = Object.keys(fileData.headersMap).sort((a, b) => {
+                const aIndex = parseInt(a.split('_')[1]);
+                const bIndex = parseInt(b.split('_')[1]);
+                return aIndex - bIndex;
+            });
+            headers = headerKeys.map(key => fileData.headersMap[key]);
+        }
+        
         // 将对象数组转换回二维数组格式
-        const wsData = [fileData.headers];
+        const wsData = [headers];
         fileData.data.forEach(row => {
             const rowArray = [];
-            fileData.headers.forEach((_, index) => {
+            headers.forEach((_, index) => {
                 const colKey = `col_${index}`;
                 rowArray.push(row[colKey] || '');
             });

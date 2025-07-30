@@ -1,10 +1,9 @@
-# User Registration System - Qimeng
+# User Registration System 
 
-綦萌用户注册系统
+用户注册系统
 
 ## System Info
 - Last Updated: 2025-03-16 10:18:14 UTC
-- Author: jingtianwei2002
 - Version: 1.0.0
 
 ## Features
@@ -17,6 +16,3 @@
 - Frontend: HTML5, CSS3, JavaScript
 - Backend: Firebase (Authentication, Firestore)
 - Hosting: GitHub Pages
-
-## Access
-Website: https://jingtianwei2002.github.io/user-registration-system-qimeng/

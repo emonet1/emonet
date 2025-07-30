@@ -163,26 +163,26 @@ function processExcelDataForFirestore(excelData) {
         }
     }
     
+    // 返回完全扁平化的数据结构 - 避免返回数组
     const processedData = {
         fileName: String(excelData.fileName || '未知文件'),
-        headers: sanitizedHeaders,
-        rows: sanitizedRows,
+        // 不返回headers数组，直接转换为字符串和映射
+        headersList: sanitizedHeaders.join('|||'),
+        headersMap: {},
+        // 不返回rows数组，直接转换为对象映射
+        dataRows: {},
         totalRows: sanitizedRows.length
     };
     
-    console.log('处理后的数据结构验证:', {
-        fileName: typeof processedData.fileName,
-        headersType: typeof processedData.headers,
-        headersLength: processedData.headers.length,
-        headersIsArray: Array.isArray(processedData.headers),
-        rowsType: typeof processedData.rows,
-        rowsLength: processedData.rows.length,
-        rowsIsArray: Array.isArray(processedData.rows),
-        firstRowType: processedData.rows[0] ? typeof processedData.rows[0] : 'undefined',
-        firstRowIsObject: processedData.rows[0] ? (typeof processedData.rows[0] === 'object' && !Array.isArray(processedData.rows[0])) : false,
-        sampleRowStructure: processedData.rows[0] ? Object.keys(processedData.rows[0]).slice(0, 3) : []
-    });
+    // 创建headers映射
+    for (let i = 0; i < sanitizedHeaders.length; i++) {
+        processedData.headersMap[`header_${i}`] = sanitizedHeaders[i];
+    }
     
+    // 创建数据行映射
+    for (let rowIndex = 0; rowIndex < sanitizedRows.length; rowIndex++) {
+        processedData.dataRows[`row_${rowIndex}`] = sanitizedRows[rowIndex];
+    }
     return processedData;
 }
 

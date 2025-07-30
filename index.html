@@ -10,6 +10,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     
+    <!-- Excel文件处理库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
     <!-- Remix Icons -->
     <link href="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/fonts/remixicon.css" rel="stylesheet">
     
@@ -83,6 +86,7 @@
             font-size: 16px;
             font-weight: 500;
             transition: all 0.3s;
+            margin-right: 10px;
         }
 
         .btn-primary {
@@ -112,71 +116,266 @@
             background-color: #5a6268;
         }
 
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+
+        .btn-icon {
+            padding: 8px;
+            background: transparent;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            color: #666;
+            margin-right: 5px;
+        }
+
+        .btn-icon:hover {
+            background-color: #f8f9fa;
+            border-color: #007bff;
+            color: #007bff;
+        }
+
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-            padding: 20px;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        .header h2 {
-            color: #2c3e50;
-            font-weight: 600;
+        .welcome-text {
+            font-size: 18px;
+            color: #333;
         }
 
-        .tabs {
+        /* 标签页样式 */
+        .tab-nav {
             display: flex;
-            margin-bottom: 20px;
             border-bottom: 1px solid #ddd;
-            background-color: white;
-            border-radius: 8px 8px 0 0;
-            overflow: hidden;
+            margin-bottom: 20px;
         }
 
-        .tab {
-            padding: 12px 24px;
-            cursor: pointer;
+        .tab-btn {
+            padding: 10px 20px;
             border: none;
             background: none;
-            color: #666;
-            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
             transition: all 0.3s;
         }
 
-        .tab:hover {
+        .tab-btn.active {
+            border-bottom-color: #4a90e2;
             color: #4a90e2;
-            background-color: rgba(74, 144, 226, 0.1);
         }
 
-        .tab.active {
-            color: #4a90e2;
-            border-bottom: 2px solid #4a90e2;
-            background-color: rgba(74, 144, 226, 0.05);
-        }
-
-        .panel {
+        .tab-content {
             display: none;
-            padding: 20px;
-            background-color: white;
-            border-radius: 0 0 8px 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        .panel.active {
+        .tab-content.active {
             display: block;
         }
 
-        /* 代码列表样式 */
+        /* Excel上传样式 */
+        .upload-section {
+            padding: 20px;
+        }
+
+        .upload-dropzone {
+            border: 2px dashed #007bff;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background-color: #f8f9fa;
+            margin-bottom: 20px;
+        }
+
+        .upload-dropzone:hover {
+            background-color: #e9ecef;
+            border-color: #0056b3;
+        }
+
+        .upload-hint {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .excel-preview {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fff;
+        }
+
+        .excel-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+
+        .excel-table th,
+        .excel-table td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .excel-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+
+        .upload-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .file-info {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .file-info p {
+            margin-bottom: 5px;
+        }
+
+        /* 文件卡片样式 */
+        .file-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #fff;
+        }
+
+        .file-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .file-header i {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+
+        .file-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .file-details {
+            margin-bottom: 15px;
+        }
+
+        .file-details p {
+            margin-bottom: 5px;
+            color: #666;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: #fff;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow: hidden;
+        }
+
+        .excel-view-modal {
+            max-width: 1000px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .modal-body {
+            padding: 20px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .excel-data-container {
+            max-height: 400px;
+            overflow: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        /* 加载动画 */
+        #loadingIndicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            z-index: 9999;
+            display: none;
+        }
+
+        /* 空状态样式 */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state i {
+            display: block;
+            margin-bottom: 15px;
+        }
+
+        /* 代码相关样式 */
         .code-list-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-            padding: 0 20px;
         }
 
         .code-list-actions {
@@ -189,115 +388,67 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             width: 200px;
-            transition: all 0.3s;
-        }
-
-        .search-input:focus {
-            outline: none;
-            border-color: #4a90e2;
-            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
         }
 
         .filter-select {
             padding: 8px 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            background-color: white;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .filter-select:focus {
-            outline: none;
-            border-color: #4a90e2;
-            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
         }
 
         .code-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
             gap: 20px;
-            padding: 20px;
         }
 
         .code-card {
-            background: white;
+            border: 1px solid #ddd;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: transform 0.2s, box-shadow 0.2s;
-            overflow: hidden;
-        }
-
-        .code-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            padding: 15px;
+            background-color: #fff;
         }
 
         .code-card-header {
             display: flex;
             align-items: center;
-            padding: 16px;
-            border-bottom: 1px solid #eee;
-            background-color: #f8f9fa;
+            margin-bottom: 10px;
         }
 
         .code-icon {
-            font-size: 24px;
-            color: #4a90e2;
-            margin-right: 12px;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: rgba(74, 144, 226, 0.1);
-            border-radius: 8px;
+            margin-right: 10px;
+            font-size: 20px;
         }
 
-        .code-info {
-            flex: 1;
-        }
-
-        .code-title {
+        .code-info h3 {
             margin: 0;
             font-size: 16px;
-            color: #2c3e50;
-            font-weight: 600;
         }
 
         .code-meta {
             font-size: 12px;
             color: #666;
-            margin-top: 4px;
-        }
-
-        .code-card-content {
-            padding: 16px;
         }
 
         .code-preview {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 4px;
-            max-height: 100px;
-            overflow: hidden;
+            margin: 10px 0;
         }
 
         .code-preview-content {
-            margin: 0;
-            font-family: 'Fira Code', monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
             font-size: 12px;
-            line-height: 1.5;
-            color: #333;
+            max-height: 100px;
+            overflow: hidden;
         }
 
         .code-card-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 16px;
-            border-top: 1px solid #eee;
-            background-color: #f8f9fa;
+            margin-top: 10px;
         }
 
         .code-date {
@@ -307,133 +458,92 @@
 
         .code-actions {
             display: flex;
-            gap: 8px;
+            gap: 5px;
         }
 
-        .btn-icon {
-            padding: 8px;
-            border: none;
-            background: none;
-            color: #4a90e2;
-            cursor: pointer;
-            border-radius: 4px;
-            transition: all 0.2s;
+        /* 用户卡片样式 */
+        .user-card {
+            margin-bottom: 15px;
+        }
+
+        .user-card-header {
             display: flex;
             align-items: center;
-            justify-content: center;
+            margin-bottom: 10px;
         }
 
-        .btn-icon:hover {
-            background-color: rgba(74, 144, 226, 0.1);
-            transform: scale(1.1);
-        }
-
-        .btn-icon i {
-            font-size: 18px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .empty-state img {
-            opacity: 0.5;
-            margin-bottom: 16px;
-        }
-
-        /* 模态框样式 */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: white;
-            margin: 5% auto;
-            padding: 20px;
-            width: 90%;
-            max-width: 800px;
-            border-radius: 8px;
-            position: relative;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        .close {
-            position: absolute;
-            right: 20px;
-            top: 15px;
+        .user-icon {
             font-size: 24px;
-            cursor: pointer;
+            margin-right: 10px;
+            color: #4a90e2;
+        }
+
+        .user-card-content p {
+            margin-bottom: 5px;
             color: #666;
-            transition: color 0.3s;
         }
 
-        .close:hover {
+        .user-card-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        /* 状态样式 */
+        .status-pending {
+            color: #ffc107;
+            font-weight: bold;
+        }
+
+        .status-approved {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .status-rejected {
             color: #dc3545;
+            font-weight: bold;
         }
 
-        #loadingIndicator {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            z-index: 1001;
+        .result-card {
+            margin-top: 20px;
         }
 
-        /* 响应式布局 */
+        .result-content p {
+            margin-bottom: 10px;
+        }
+
+        /* 响应式设计 */
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
             }
-
+            
             .header {
                 flex-direction: column;
-                gap: 10px;
-                text-align: center;
-            }
-
-            .code-list-header {
-                flex-direction: column;
+                align-items: flex-start;
                 gap: 10px;
             }
-
-            .code-list-actions {
-                width: 100%;
-                flex-direction: column;
-            }
-
-            .search-input,
-            .filter-select {
-                width: 100%;
-            }
-
+            
             .code-grid {
                 grid-template-columns: 1fr;
             }
-
-            .modal-content {
-                margin: 10% auto;
-                width: 95%;
+            
+            .code-list-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
             }
-
-            .btn {
+            
+            .code-list-actions {
+                flex-direction: column;
+            }
+            
+            .search-input {
                 width: 100%;
+            }
+            
+            .btn {
                 margin-bottom: 10px;
             }
         }
@@ -500,145 +610,142 @@
             <h2>注册状态查询</h2>
             <form id="statusQueryElement">
                 <div class="form-group">
-                                        <label class="form-label">电话号码</label>
+                    <label class="form-label">电话号码</label>
                     <input type="tel" id="queryPhone" class="form-input" required>
                     <div class="error-message"></div>
                 </div>
                 <button type="submit" class="btn btn-primary">查询</button>
                 <button type="button" class="btn btn-secondary" onclick="showLoginForm()">返回登录</button>
             </form>
-            <div id="queryResult" class="query-result-container"></div>
+            <div id="queryResult"></div>
         </div>
 
         <!-- 用户面板 -->
         <div id="userPanel" class="card" style="display: none;">
             <div class="header">
-                <h2>欢迎回来, <span id="userWelcome"></span></h2>
-                <button onclick="handleLogout()" class="btn btn-danger">退出登录</button>
+                <div class="welcome-text">
+                    欢迎，<span id="userWelcome"></span>
+                </div>
+                <button onclick="handleLogout()" class="btn btn-secondary">退出登录</button>
             </div>
-            <div id="userCodeList" class="code-container"></div>
+            
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchUserTab('codeTab')">代码管理</button>
+                <button class="tab-btn" onclick="switchUserTab('excelTab')">Excel文件</button>
+            </div>
+            
+            <div id="codeTab" class="tab-content active">
+                <div id="userCodeList"></div>
+            </div>
+            
+            <div id="excelTab" class="tab-content">
+                <div class="upload-section">
+                    <h3>Excel文件上传</h3>
+                    <div class="file-upload-area">
+                        <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display: none;">
+                        <div class="upload-dropzone" onclick="document.getElementById('excelFileInput').click();">
+                            <i class="ri-file-excel-2-line" style="font-size: 48px; color: #28a745;"></i>
+                            <p>点击选择Excel文件</p>
+                            <p class="upload-hint">支持 .xlsx 和 .xls 格式，最大5MB</p>
+                        </div>
+                    </div>
+                    <div id="excelPreview" class="excel-preview" style="display: none;">
+                        <h4>文件预览</h4>
+                        <div id="excelTableContainer"></div>
+                        <div class="upload-actions">
+                            <button onclick="processExcelFile()" class="btn btn-primary">处理并上传</button>
+                            <button onclick="clearExcelPreview()" class="btn btn-secondary">清除</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="userExcelList"></div>
+            </div>
         </div>
 
         <!-- 管理员面板 -->
         <div id="adminPanel" class="card" style="display: none;">
             <div class="header">
-                <h2>管理员控制台</h2>
-                <button onclick="handleLogout()" class="btn btn-danger">退出登录</button>
+                <div class="welcome-text">管理员面板</div>
+                <button onclick="handleLogout()" class="btn btn-secondary">退出登录</button>
             </div>
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab('pendingUsers')">待审批用户</button>
-                <button class="tab" onclick="switchTab('codeFiles')">代码管理</button>
+            
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('pendingUsers')">待审核用户</button>
+                <button class="tab-btn" onclick="switchTab('codeFiles')">代码文件</button>
+                <button class="tab-btn" onclick="switchTab('excelFiles')">Excel文件</button>
             </div>
-            <!-- 待审批用户列表 -->
-            <div id="pendingUsers" class="panel active">
-                <div id="pendingList" class="pending-users-container"></div>
+            
+            <div id="pendingUsers" class="tab-content active">
+                <div id="pendingList"></div>
             </div>
-            <!-- 代码管理 -->
-            <div id="codeFiles" class="panel">
-                <button class="btn btn-primary upload-btn" onclick="showUploadForm()">
-                    <i class="ri-upload-2-line"></i> 上传代码
-                </button>
-                <div id="adminCodeList" class="code-container"></div>
+            
+            <div id="codeFiles" class="tab-content">
+                <div id="adminCodeList"></div>
+            </div>
+            
+            <div id="excelFiles" class="tab-content">
+                <div class="upload-section">
+                    <h3>Excel文件管理</h3>
+                    <div class="file-upload-area">
+                        <input type="file" id="adminExcelFileInput" accept=".xlsx,.xls" style="display: none;">
+                        <div class="upload-dropzone" onclick="document.getElementById('adminExcelFileInput').click();">
+                            <i class="ri-file-excel-2-line" style="font-size: 48px; color: #28a745;"></i>
+                            <p>点击选择Excel文件</p>
+                            <p class="upload-hint">支持 .xlsx 和 .xls 格式，最大5MB</p>
+                        </div>
+                    </div>
+                    <div id="adminExcelPreview" class="excel-preview" style="display: none;">
+                        <h4>文件预览</h4>
+                        <div id="adminExcelTableContainer"></div>
+                        <div class="upload-actions">
+                            <button onclick="processAdminExcelFile()" class="btn btn-primary">处理并上传</button>
+                            <button onclick="clearAdminExcelPreview()" class="btn btn-secondary">清除</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="adminExcelList"></div>
             </div>
         </div>
 
-        <!-- 代码上传/编辑模态框 -->
+        <!-- 代码模态框 -->
         <div id="codeModal" class="modal">
             <div class="modal-content">
-                <span class="close" onclick="hideCodeModal()">&times;</span>
-                <h2 id="modalTitle">上传代码</h2>
-                <form id="codeForm">
-                    <div class="form-group">
-                        <label class="form-label">文件名</label>
-                        <input type="text" id="fileName" class="form-input" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">代码内容</label>
-                        <textarea id="codeContent" class="form-input code-editor" rows="15" required></textarea>
-                    </div>
-                    <input type="hidden" id="codeId">
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="ri-save-line"></i> 保存
-                        </button>
-                        <button type="button" class="btn btn-secondary" onclick="hideCodeModal()">
-                            <i class="ri-close-line"></i> 取消
-                        </button>
-                    </div>
-                </form>
+                <div class="modal-header">
+                    <h3 id="modalTitle">代码管理</h3>
+                    <button onclick="hideCodeModal()" class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="codeForm">
+                        <input type="hidden" id="codeId">
+                        <div class="form-group">
+                            <label class="form-label">文件名</label>
+                            <input type="text" id="fileName" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">代码内容</label>
+                            <textarea id="codeContent" class="form-input" rows="15" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                        <button type="button" onclick="hideCodeModal()" class="btn btn-secondary">取消</button>
+                    </form>
+                </div>
             </div>
-        </div>
-
-        <!-- 加载指示器 -->
-        <div id="loadingIndicator">
-            <div class="loading-spinner"></div>
-            <p>处理中...</p>
         </div>
     </div>
 
-    <!-- 代码编辑器样式 -->
+    <!-- 加载指示器 -->
+    <div id="loadingIndicator">
+        <i class="ri-loader-4-line" style="animation: spin 1s linear infinite;"></i>
+        加载中...
+    </div>
+
+    <script src="js/app.js"></script>
+
     <style>
-        .code-editor {
-            font-family: 'Fira Code', monospace;
-            font-size: 14px;
-            line-height: 1.5;
-            padding: 12px;
-            background-color: #f8f9fa;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            resize: vertical;
-            min-height: 200px;
-        }
-
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #4a90e2;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
-        .form-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .upload-btn {
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .upload-btn i {
-            font-size: 20px;
-        }
-
-        .query-result-container {
-            margin-top: 20px;
-        }
-
-        .pending-users-container {
-            display: grid;
-            gap: 20px;
-            padding: 20px;
-        }
-
-        @media (min-width: 768px) {
-            .pending-users-container {
-                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            }
-        }
     </style>
-
-    <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>代码管理系统</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Remix Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/fonts/remixicon.css" rel="stylesheet">
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            background-color: #f5f5f5;
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .error-message {
+            color: #dc3545;
+            font-size: 14px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background-color: #4a90e2;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #357abd;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h2 {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+            background-color: white;
+            border-radius: 8px 8px 0 0;
+            overflow: hidden;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            color: #4a90e2;
+            background-color: rgba(74, 144, 226, 0.1);
+        }
+
+        .tab.active {
+            color: #4a90e2;
+            border-bottom: 2px solid #4a90e2;
+            background-color: rgba(74, 144, 226, 0.05);
+        }
+
+        .panel {
+            display: none;
+            padding: 20px;
+            background-color: white;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        /* 代码列表样式 */
+        .code-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 0 20px;
+        }
+
+        .code-list-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+            transition: all 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+        }
+
+        .code-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .code-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+            overflow: hidden;
+        }
+
+        .code-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .code-card-header {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            background-color: #f8f9fa;
+        }
+
+        .code-icon {
+            font-size: 24px;
+            color: #4a90e2;
+            margin-right: 12px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(74, 144, 226, 0.1);
+            border-radius: 8px;
+        }
+
+        .code-info {
+            flex: 1;
+        }
+
+        .code-title {
+            margin: 0;
+            font-size: 16px;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .code-meta {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .code-card-content {
+            padding: 16px;
+        }
+
+        .code-preview {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 4px;
+            max-height: 100px;
+            overflow: hidden;
+        }
+
+        .code-preview-content {
+            margin: 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .code-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-top: 1px solid #eee;
+            background-color: #f8f9fa;
+        }
+
+        .code-date {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .code-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            padding: 8px;
+            border: none;
+            background: none;
+            color: #4a90e2;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon:hover {
+            background-color: rgba(74, 144, 226, 0.1);
+            transform: scale(1.1);
+        }
+
+        .btn-icon i {
+            font-size: 18px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .empty-state img {
+            opacity: 0.5;
+            margin-bottom: 16px;
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 800px;
+            border-radius: 8px;
+            position: relative;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+            transition: color 0.3s;
+        }
+
+        .close:hover {
+            color: #dc3545;
+        }
+
+        #loadingIndicator {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1001;
+        }
+
+        /* 响应式布局 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+
+            .code-list-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .code-list-actions {
+                width: 100%;
+                flex-direction: column;
+            }
+
+            .search-input,
+            .filter-select {
+                width: 100%;
+            }
+
+            .code-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .modal-content {
+                margin: 10% auto;
+                width: 95%;
+            }
+
+            .btn {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 登录表单 -->
+        <div id="loginForm" class="card">
+            <h2>用户登录</h2>
+            <form id="loginFormElement">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" id="loginUsername" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <input type="password" id="loginPassword" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <button type="submit" class="btn btn-primary">登录</button>
+                <button type="button" class="btn btn-secondary" onclick="showRegisterForm()">注册</button>
+                <button type="button" class="btn btn-secondary" onclick="showStatusQuery()">查询状态</button>
+            </form>
+        </div>
+
+        <!-- 注册表单 -->
+        <div id="registerForm" class="card" style="display: none;">
+            <h2>用户注册</h2>
+            <form id="registerFormElement">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input type="text" id="registerUsername" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">姓名</label>
+                    <input type="text" id="registerName" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">单位</label>
+                    <input type="text" id="registerCompany" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">电话号码</label>
+                    <input type="tel" id="registerPhone" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <input type="password" id="registerPassword" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <button type="submit" class="btn btn-primary">提交注册</button>
+                <button type="button" class="btn btn-secondary" onclick="showLoginForm()">返回登录</button>
+            </form>
+        </div>
+
+        <!-- 状态查询 -->
+        <div id="statusQueryForm" class="card" style="display: none;">
+            <h2>注册状态查询</h2>
+            <form id="statusQueryElement">
+                <div class="form-group">
+                                        <label class="form-label">电话号码</label>
+                    <input type="tel" id="queryPhone" class="form-input" required>
+                    <div class="error-message"></div>
+                </div>
+                <button type="submit" class="btn btn-primary">查询</button>
+                <button type="button" class="btn btn-secondary" onclick="showLoginForm()">返回登录</button>
+            </form>
+            <div id="queryResult" class="query-result-container"></div>
+        </div>
+
+        <!-- 用户面板 -->
+        <div id="userPanel" class="card" style="display: none;">
+            <div class="header">
+                <h2>欢迎回来, <span id="userWelcome"></span></h2>
+                <button onclick="handleLogout()" class="btn btn-danger">退出登录</button>
+            </div>
+            <div id="userCodeList" class="code-container"></div>
+        </div>
+
+        <!-- 管理员面板 -->
+        <div id="adminPanel" class="card" style="display: none;">
+            <div class="header">
+                <h2>管理员控制台</h2>
+                <button onclick="handleLogout()" class="btn btn-danger">退出登录</button>
+            </div>
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('pendingUsers')">待审批用户</button>
+                <button class="tab" onclick="switchTab('codeFiles')">代码管理</button>
+            </div>
+            <!-- 待审批用户列表 -->
+            <div id="pendingUsers" class="panel active">
+                <div id="pendingList" class="pending-users-container"></div>
+            </div>
+            <!-- 代码管理 -->
+            <div id="codeFiles" class="panel">
+                <button class="btn btn-primary upload-btn" onclick="showUploadForm()">
+                    <i class="ri-upload-2-line"></i> 上传代码
+                </button>
+                <div id="adminCodeList" class="code-container"></div>
+            </div>
+        </div>
+
+        <!-- 代码上传/编辑模态框 -->
+        <div id="codeModal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="hideCodeModal()">&times;</span>
+                <h2 id="modalTitle">上传代码</h2>
+                <form id="codeForm">
+                    <div class="form-group">
+                        <label class="form-label">文件名</label>
+                        <input type="text" id="fileName" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">代码内容</label>
+                        <textarea id="codeContent" class="form-input code-editor" rows="15" required></textarea>
+                    </div>
+                    <input type="hidden" id="codeId">
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="ri-save-line"></i> 保存
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="hideCodeModal()">
+                            <i class="ri-close-line"></i> 取消
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 加载指示器 -->
+        <div id="loadingIndicator">
+            <div class="loading-spinner"></div>
+            <p>处理中...</p>
+        </div>
+    </div>
+
+    <!-- 代码编辑器样式 -->
+    <style>
+        .code-editor {
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            padding: 12px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 200px;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4a90e2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .upload-btn {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .upload-btn i {
+            font-size: 20px;
+        }
+
+        .query-result-container {
+            margin-top: 20px;
+        }
+
+        .pending-users-container {
+            display: grid;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        @media (min-width: 768px) {
+            .pending-users-container {
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            }
+        }
+    </style>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

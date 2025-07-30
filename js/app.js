@@ -1067,45 +1067,6 @@ function handleExcelFileSelectCommon(event, isAdmin) {
     readExcelFile(file, isAdmin);
 }
 
-function readExcelFile(file, isAdmin = false) {
-    const reader = new FileReader();
-    
-    reader.onload = function(e) {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            
-            // 获取第一个工作表
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            
-            // 转换为JSON数据
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            
-            if (jsonData.length === 0) {
-                alert('Excel文件为空');
-                return;
-            }
-
-            currentExcelData = {
-                fileName: file.name,
-                data: jsonData,
-                headers: jsonData[0] || [],
-                rows: jsonData.slice(1),
-                isAdmin: isAdmin
-            };
-
-            displayExcelPreview(isAdmin);
-            
-        } catch (error) {
-            console.error('Excel文件读取失败:', error);
-            alert('Excel文件读取失败，请检查文件格式');
-        }
-    };
-
-    reader.readAsArrayBuffer(file);
-}
-
 function displayExcelPreview(isAdmin = false) {
     const previewId = isAdmin ? 'adminExcelPreview' : 'excelPreview';
     const containerId = isAdmin ? 'adminExcelTableContainer' : 'excelTableContainer';
@@ -1548,3 +1509,239 @@ window.clearAdminExcelPreview = clearAdminExcelPreview;
 window.viewExcelFile = viewExcelFile;
 window.downloadExcelData = downloadExcelData;
 window.deleteExcelFile = deleteExcelFile;
+
+// 添加缺失的Excel相关函数
+async function loadUserExcelList() {
+    showLoading(true);
+    try {
+        const snapshot = await db.collection('excel_files')
+            .orderBy('uploadedAt', 'desc')
+            .get();
+
+        const excelList = document.getElementById('userExcelList');
+        if (!excelList) return;
+
+        if (snapshot.empty) {
+            excelList.innerHTML = `
+                <div class="empty-state">
+                    <i class="ri-file-excel-line" style="font-size: 48px; color: #666;"></i>
+                    <p>暂无Excel文件</p>
+                </div>
+            `;
+            return;
+        }
+
+        excelList.innerHTML = snapshot.docs.map(doc => {
+            const file = doc.data();
+            return `
+                <div class="excel-file-card">
+                    <div class="file-header">
+                        <i class="ri-file-excel-line"></i>
+                        <h3>${file.fileName}</h3>
+                    </div>
+                    <div class="file-info">
+                        <p>上传者: ${file.uploadedBy}</p>
+                        <p>上传时间: ${formatDate(file.uploadedAt)}</p>
+                        <p>数据行数: ${file.totalRows}</p>
+                    </div>
+                    <div class="file-actions">
+                        <button onclick="viewExcelFile('${doc.id}')" class="btn btn-primary">查看</button>
+                        <button onclick="downloadExcelData('${doc.id}')" class="btn btn-secondary">下载</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error('加载Excel文件列表失败:', error);
+        alert('加载失败: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function loadAdminExcelList() {
+    showLoading(true);
+    try {
+        const snapshot = await db.collection('excel_files')
+            .orderBy('uploadedAt', 'desc')
+            .get();
+
+        const excelList = document.getElementById('adminExcelList');
+        if (!excelList) return;
+
+        if (snapshot.empty) {
+            excelList.innerHTML = `
+                <div class="empty-state">
+                    <i class="ri-file-excel-line" style="font-size: 48px; color: #666;"></i>
+                    <p>暂无Excel文件</p>
+                </div>
+            `;
+            return;
+        }
+
+        excelList.innerHTML = snapshot.docs.map(doc => {
+            const file = doc.data();
+            return `
+                <div class="excel-file-card">
+                    <div class="file-header">
+                        <i class="ri-file-excel-line"></i>
+                        <h3>${file.fileName}</h3>
+                    </div>
+                    <div class="file-info">
+                        <p>上传者: ${file.uploadedBy}</p>
+                        <p>上传时间: ${formatDate(file.uploadedAt)}</p>
+                        <p>数据行数: ${file.totalRows}</p>
+                    </div>
+                    <div class="file-actions">
+                        <button onclick="viewExcelFile('${doc.id}')" class="btn btn-primary">查看</button>
+                        <button onclick="downloadExcelData('${doc.id}')" class="btn btn-secondary">下载</button>
+                        <button onclick="deleteExcelFile('${doc.id}')" class="btn btn-danger">删除</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error('加载Excel文件列表失败:', error);
+        alert('加载失败: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function deleteExcelFile(fileId) {
+    if (!confirm('确定要删除这个Excel文件吗？此操作不可恢复。')) {
+        return;
+    }
+
+    showLoading(true);
+    try {
+        await db.collection('excel_files').doc(fileId).delete();
+        alert('Excel文件已删除');
+        if (currentUser.role === 'admin') {
+            await loadAdminExcelList();
+        } else {
+            await loadUserExcelList();
+        }
+    } catch (error) {
+        console.error('删除Excel文件失败:', error);
+        alert('操作失败: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+function clearExcelPreview() {
+    const previewDiv = document.getElementById('excelPreview');
+    if (previewDiv) {
+        previewDiv.style.display = 'none';
+    }
+    currentExcelData = null;
+}
+
+function clearAdminExcelPreview() {
+    const previewDiv = document.getElementById('adminExcelPreview');
+    if (previewDiv) {
+        previewDiv.style.display = 'none';
+    }
+    currentExcelData = null;
+}
+
+function handleLogout() {
+    currentUser = null;
+    showLoginForm();
+}
+
+// 改进的Excel文件读取函数 - 处理多个sheet
+function readExcelFile(file, isAdmin = false) {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            console.log('📋 Excel工作簿信息:', {
+                sheetNames: workbook.SheetNames,
+                totalSheets: workbook.SheetNames.length
+            });
+            
+            // 如果有多个sheet，让用户选择或默认使用第一个
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            console.log('📊 使用工作表:', firstSheetName);
+            
+            // 转换为JSON数据，使用更安全的选项
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                header: 1,
+                defval: '', // 空单元格默认值
+                raw: false  // 不使用原始值，全部转为字符串
+            });
+            
+            console.log('📈 转换后的JSON数据结构:', {
+                totalRows: jsonData.length,
+                firstRowLength: jsonData[0] ? jsonData[0].length : 0,
+                sampleData: jsonData.slice(0, 2)
+            });
+            
+            if (jsonData.length === 0) {
+                alert('Excel文件为空或选择的工作表为空');
+                return;
+            }
+
+            // 确保headers都是字符串类型
+            const cleanHeaders = jsonData[0] ? jsonData[0].map((header, index) => {
+                if (header === null || header === undefined || header === '') {
+                    return `列${index + 1}`;
+                }
+                return String(header);
+            }) : [];
+
+            // 确保数据行都是数组且只包含基本类型
+            const cleanRows = jsonData.slice(1).map(row => {
+                if (!Array.isArray(row)) {
+                    return new Array(cleanHeaders.length).fill('');
+                }
+                return row.map(cell => {
+                    if (cell === null || cell === undefined) {
+                        return '';
+                    }
+                    if (typeof cell === 'object') {
+                        return JSON.stringify(cell);
+                    }
+                    return String(cell);
+                });
+            });
+
+            currentExcelData = {
+                fileName: file.name,
+                sheetName: firstSheetName,
+                totalSheets: workbook.SheetNames.length,
+                data: [cleanHeaders, ...cleanRows],
+                headers: cleanHeaders,
+                rows: cleanRows,
+                isAdmin: isAdmin
+            };
+
+            console.log('✅ 清理后的Excel数据:', {
+                fileName: currentExcelData.fileName,
+                sheetName: currentExcelData.sheetName,
+                totalSheets: currentExcelData.totalSheets,
+                headersCount: currentExcelData.headers.length,
+                rowsCount: currentExcelData.rows.length,
+                headerTypes: currentExcelData.headers.map(h => typeof h),
+                sampleRowTypes: currentExcelData.rows[0] ? currentExcelData.rows[0].map(c => typeof c) : []
+            });
+
+            displayExcelPreview(isAdmin);
+            
+        } catch (error) {
+            console.error('Excel文件读取失败:', error);
+            alert('Excel文件读取失败，请检查文件格式');
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+}

@@ -6,13 +6,13 @@ const ADMIN_PASSWORD = 'admin123';
 
 // Firebase 配置
 const firebaseConfig = {
-    apiKey: "AIzaSyDVkZFZPP15dtqrtJDkCGrXwzx5AWPGLRU",
-    authDomain: "user-system-qimeng.firebaseapp.com",
-    projectId: "user-system-qimeng",
-    storageBucket: "user-system-qimeng.firebasestorage.app",
-    messagingSenderId: "726411001480",
-    appId: "1:726411001480:web:f36236c4b9391262fca93d",
-    measurementId: "G-PSE6HF8GR4"
+    apiKey: "AIzaSyBCoiNOTvbD_MjgdFLVaieeN1rq4F1hJaM",
+    authDomain: "emonet-registration-system.firebaseapp.com",
+    projectId: "emonet-registration-system",
+    storageBucket: "emonet-registration-system.firebasestorage.app",
+    messagingSenderId: "78485270665",
+    appId: "1:78485270665:web:3927049f025372a3dfd658",
+    measurementId: "G-LNPHXZH1C4"
 };
 
 // 初始化 Firebase

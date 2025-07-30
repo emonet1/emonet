@@ -57,6 +57,65 @@ function clearError(elementId) {
     }
 }
 
+// 数据清理函数 - 确保数据兼容Firestore
+function sanitizeDataForFirestore(data) {
+    if (data === null || data === undefined) {
+        return null;
+    }
+    
+    if (Array.isArray(data)) {
+        // 将数组转换为平面结构，避免嵌套数组
+        return data.map(item => {
+            if (Array.isArray(item)) {
+                // 如果是嵌套数组，转换为字符串
+                return JSON.stringify(item);
+            } else if (typeof item === 'object' && item !== null) {
+                // 如果是对象，递归处理
+                return sanitizeDataForFirestore(item);
+            } else {
+                // 确保基本数据类型正确处理
+                return sanitizeValue(item);
+            }
+        });
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+        const cleanedData = {};
+        for (const [key, value] of Object.entries(data)) {
+            cleanedData[key] = sanitizeDataForFirestore(value);
+        }
+        return cleanedData;
+    }
+    
+    return sanitizeValue(data);
+}
+
+function sanitizeValue(value) {
+    // 处理各种数据类型以确保Firestore兼容性
+    if (value === null || value === undefined) {
+        return null;
+    }
+    
+    if (typeof value === 'string') {
+        return value;
+    }
+    
+    if (typeof value === 'number') {
+        // 检查是否为有效数字
+        if (isNaN(value) || !isFinite(value)) {
+            return String(value);
+        }
+        return value;
+    }
+    
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    
+    // 其他类型转换为字符串
+    return String(value);
+}
+
 // 表单验证
 function validateUsername(username) {
     return username.length > 0;
@@ -938,7 +997,7 @@ function displayExcelPreview(isAdmin = false) {
             <thead>
                 <tr>
                     ${currentExcelData.headers.map(header => 
-                        `<th>${header || '未命名列'}</th>`
+                        `<th>${sanitizeValue(header) || '未命名列'}</th>`
                     ).join('')}
                 </tr>
             </thead>
@@ -950,7 +1009,7 @@ function displayExcelPreview(isAdmin = false) {
     previewRows.forEach(row => {
         tableHTML += '<tr>';
         currentExcelData.headers.forEach((_, index) => {
-            tableHTML += `<td>${row[index] || ''}</td>`;
+            tableHTML += `<td>${sanitizeValue(row[index]) || ''}</td>`;
         });
         tableHTML += '</tr>';
     });
@@ -987,20 +1046,35 @@ async function processExcelFileCommon(isAdmin) {
 
     showLoading(true);
     try {
+        // 清理和处理Excel数据以确保Firestore兼容性
+        const sanitizedHeaders = sanitizeDataForFirestore(currentExcelData.headers);
+        const sanitizedRows = sanitizeDataForFirestore(currentExcelData.rows);
+
+        console.log('开始处理Excel数据...');
+        console.log('原始行数:', currentExcelData.rows.length);
+        console.log('处理后行数:', sanitizedRows.length);
+
         // 将Excel数据保存到Firestore
         const excelDoc = {
             fileName: currentExcelData.fileName,
-            headers: currentExcelData.headers,
-            data: currentExcelData.rows,
-            totalRows: currentExcelData.rows.length,
+            headers: sanitizedHeaders,
+            data: sanitizedRows,
+            totalRows: sanitizedRows.length,
             uploadedAt: CURRENT_TIME,
             uploadedBy: currentUser.username,
             fileType: 'excel'
         };
 
+        console.log('准备保存到Firestore的数据结构:', {
+            fileName: excelDoc.fileName,
+            headersCount: excelDoc.headers.length,
+            dataRowsCount: excelDoc.data.length,
+            totalRows: excelDoc.totalRows
+        });
+
         const docRef = await db.collection('excel_files').add(excelDoc);
         
-        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${currentExcelData.rows.length}`);
+        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${sanitizedRows.length}`);
         
         if (isAdmin) {
             clearAdminExcelPreview();
@@ -1012,6 +1086,7 @@ async function processExcelFileCommon(isAdmin) {
 
     } catch (error) {
         console.error('Excel文件上传失败:', error);
+        console.error('错误详情:', error.message);
         alert('上传失败: ' + error.message);
     } finally {
         showLoading(false);
@@ -1140,7 +1215,7 @@ async function viewExcelFile(fileId) {
                             <thead>
                                 <tr>
                                     ${fileData.headers.map(header => 
-                                        `<th>${header || '未命名列'}</th>`
+                                        `<th>${sanitizeValue(header) || '未命名列'}</th>`
                                     ).join('')}
                                 </tr>
                             </thead>
@@ -1148,7 +1223,7 @@ async function viewExcelFile(fileId) {
                                 ${fileData.data.slice(0, 50).map(row => `
                                     <tr>
                                         ${fileData.headers.map((_, index) => 
-                                            `<td>${row[index] || ''}</td>`
+                                            `<td>${sanitizeValue(row[index]) || ''}</td>`
                                         ).join('')}
                                     </tr>
                                 `).join('')}
@@ -1333,6 +1408,9 @@ window.processExcelFile = processExcelFile;
 window.processAdminExcelFile = processAdminExcelFile;
 window.clearExcelPreview = clearExcelPreview;
 window.clearAdminExcelPreview = clearAdminExcelPreview;
+window.viewExcelFile = viewExcelFile;
+window.downloadExcelData = downloadExcelData;
+window.deleteExcelFile = deleteExcelFile;
 window.viewExcelFile = viewExcelFile;
 window.downloadExcelData = downloadExcelData;
 window.deleteExcelFile = deleteExcelFile;

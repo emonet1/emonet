@@ -1,5 +1,5 @@
 // 全局常量
-const CURRENT_TIME = '2025-03-16 11:48:09';
+const CURRENT_TIME = '2025-07-30 09:19:03';
 const CURRENT_USER = 'jingtianwei2002';
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123';
@@ -57,63 +57,159 @@ function clearError(elementId) {
     }
 }
 
-// 数据清理函数 - 确保数据兼容Firestore
-function sanitizeDataForFirestore(data) {
+// 强化的数据清理函数 - 彻底解决嵌套数组问题
+function deepSanitizeForFirestore(data, depth = 0) {
+    // 防止无限递归
+    if (depth > 10) {
+        console.warn('数据结构过深，转换为字符串:', data);
+        return String(data);
+    }
+    
+    // 处理 null 和 undefined
     if (data === null || data === undefined) {
         return null;
     }
     
-    if (Array.isArray(data)) {
-        // 将数组转换为平面结构，避免嵌套数组
-        return data.map(item => {
-            if (Array.isArray(item)) {
-                // 如果是嵌套数组，转换为字符串
-                return JSON.stringify(item);
-            } else if (typeof item === 'object' && item !== null) {
-                // 如果是对象，递归处理
-                return sanitizeDataForFirestore(item);
-            } else {
-                // 确保基本数据类型正确处理
-                return sanitizeValue(item);
-            }
-        });
+    // 处理基本类型
+    if (typeof data === 'string' || typeof data === 'boolean') {
+        return data;
     }
     
-    if (typeof data === 'object' && data !== null) {
-        const cleanedData = {};
-        for (const [key, value] of Object.entries(data)) {
-            cleanedData[key] = sanitizeDataForFirestore(value);
+    // 处理数字
+    if (typeof data === 'number') {
+        if (isNaN(data) || !isFinite(data)) {
+            return String(data);
         }
-        return cleanedData;
+        return data;
     }
     
-    return sanitizeValue(data);
+    // 处理日期
+    if (data instanceof Date) {
+        return data.toISOString();
+    }
+    
+    // 处理数组 - 这是关键部分
+    if (Array.isArray(data)) {
+        const sanitizedArray = [];
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            
+            // 如果数组元素也是数组，将其转换为字符串
+            if (Array.isArray(item)) {
+                sanitizedArray.push(JSON.stringify(item));
+            } else if (item && typeof item === 'object') {
+                // 如果是对象，递归处理但转换为字符串以避免复杂结构
+                sanitizedArray.push(JSON.stringify(deepSanitizeForFirestore(item, depth + 1)));
+            } else {
+                // 基本类型直接处理
+                sanitizedArray.push(deepSanitizeForFirestore(item, depth + 1));
+            }
+        }
+        return sanitizedArray;
+    }
+    
+    // 处理对象
+    if (typeof data === 'object' && data !== null) {
+        const sanitizedObject = {};
+        for (const [key, value] of Object.entries(data)) {
+            const sanitizedKey = String(key).replace(/[.#$\/\[\]]/g, '_');
+            sanitizedObject[sanitizedKey] = deepSanitizeForFirestore(value, depth + 1);
+        }
+        return sanitizedObject;
+    }
+    
+    // 其他情况转换为字符串
+    return String(data);
 }
 
-function sanitizeValue(value) {
-    // 处理各种数据类型以确保Firestore兼容性
-    if (value === null || value === undefined) {
-        return null;
-    }
-    
-    if (typeof value === 'string') {
-        return value;
-    }
-    
-    if (typeof value === 'number') {
-        // 检查是否为有效数字
-        if (isNaN(value) || !isFinite(value)) {
-            return String(value);
+// 验证数据是否包含嵌套数组
+function validateFirestoreData(data, path = '') {
+    if (Array.isArray(data)) {
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            if (Array.isArray(item)) {
+                console.error(`发现嵌套数组在路径: ${path}[${i}]`, item);
+                return false;
+            }
+            if (typeof item === 'object' && item !== null) {
+                if (!validateFirestoreData(item, `${path}[${i}]`)) {
+                    return false;
+                }
+            }
         }
-        return value;
+    } else if (typeof data === 'object' && data !== null) {
+        for (const [key, value] of Object.entries(data)) {
+            if (!validateFirestoreData(value, `${path}.${key}`)) {
+                return false;
+            }
+        }
     }
+    return true;
+}
+
+// 专门处理Excel数据的函数
+function processExcelDataForFirestore(excelData) {
+    console.log('开始处理Excel数据，原始数据结构:', excelData);
     
-    if (typeof value === 'boolean') {
-        return value;
-    }
+    // 处理headers
+    const sanitizedHeaders = excelData.headers.map(header => {
+        if (header === null || header === undefined || header === '') {
+            return '未命名列';
+        }
+        return String(header);
+    });
     
-    // 其他类型转换为字符串
-    return String(value);
+    // 处理rows - 关键步骤
+    const sanitizedRows = excelData.rows.map((row, rowIndex) => {
+        if (!Array.isArray(row)) {
+            console.warn(`第${rowIndex}行不是数组:`, row);
+            return [];
+        }
+        
+        return row.map((cell, cellIndex) => {
+            // 如果单元格是数组，直接转换为字符串
+            if (Array.isArray(cell)) {
+                console.log(`发现数组单元格在第${rowIndex}行第${cellIndex}列:`, cell);
+                return JSON.stringify(cell);
+            }
+            
+            // 如果是对象，转换为字符串
+            if (cell && typeof cell === 'object') {
+                return JSON.stringify(cell);
+            }
+            
+            // 处理null/undefined
+            if (cell === null || cell === undefined) {
+                return '';
+            }
+            
+            // 处理数字
+            if (typeof cell === 'number') {
+                if (isNaN(cell) || !isFinite(cell)) {
+                    return String(cell);
+                }
+                return cell;
+            }
+            
+            // 其他情况转换为字符串
+            return String(cell);
+        });
+    });
+    
+    const processedData = {
+        fileName: String(excelData.fileName),
+        headers: sanitizedHeaders,
+        rows: sanitizedRows
+    };
+    
+    console.log('处理后的数据结构:', {
+        fileName: processedData.fileName,
+        headersLength: processedData.headers.length,
+        rowsLength: processedData.rows.length,
+        firstRowSample: processedData.rows[0]
+    });
+    
+    return processedData;
 }
 
 // 表单验证
@@ -997,7 +1093,7 @@ function displayExcelPreview(isAdmin = false) {
             <thead>
                 <tr>
                     ${currentExcelData.headers.map(header => 
-                        `<th>${sanitizeValue(header) || '未命名列'}</th>`
+                        `<th>${String(header || '未命名列')}</th>`
                     ).join('')}
                 </tr>
             </thead>
@@ -1009,7 +1105,18 @@ function displayExcelPreview(isAdmin = false) {
     previewRows.forEach(row => {
         tableHTML += '<tr>';
         currentExcelData.headers.forEach((_, index) => {
-            tableHTML += `<td>${sanitizeValue(row[index]) || ''}</td>`;
+            const cellValue = row[index];
+            let displayValue = '';
+            
+            if (Array.isArray(cellValue)) {
+                displayValue = JSON.stringify(cellValue);
+            } else if (cellValue && typeof cellValue === 'object') {
+                displayValue = JSON.stringify(cellValue);
+            } else {
+                displayValue = String(cellValue || '');
+            }
+            
+            tableHTML += `<td>${displayValue}</td>`;
         });
         tableHTML += '</tr>';
     });
@@ -1046,35 +1153,41 @@ async function processExcelFileCommon(isAdmin) {
 
     showLoading(true);
     try {
-        // 清理和处理Excel数据以确保Firestore兼容性
-        const sanitizedHeaders = sanitizeDataForFirestore(currentExcelData.headers);
-        const sanitizedRows = sanitizeDataForFirestore(currentExcelData.rows);
-
         console.log('开始处理Excel数据...');
-        console.log('原始行数:', currentExcelData.rows.length);
-        console.log('处理后行数:', sanitizedRows.length);
+        console.log('原始数据:', currentExcelData);
+        
+        // 使用专门的Excel数据处理函数
+        const processedData = processExcelDataForFirestore(currentExcelData);
+        
+        // 验证处理后的数据
+        if (!validateFirestoreData(processedData.rows)) {
+            throw new Error('数据验证失败：仍然包含嵌套数组');
+        }
+        
+        console.log('数据验证通过，准备保存到Firestore');
 
         // 将Excel数据保存到Firestore
         const excelDoc = {
-            fileName: currentExcelData.fileName,
-            headers: sanitizedHeaders,
-            data: sanitizedRows,
-            totalRows: sanitizedRows.length,
+            fileName: processedData.fileName,
+            headers: processedData.headers,
+            data: processedData.rows,
+            totalRows: processedData.rows.length,
             uploadedAt: CURRENT_TIME,
             uploadedBy: currentUser.username,
             fileType: 'excel'
         };
 
-        console.log('准备保存到Firestore的数据结构:', {
+        console.log('最终保存的文档结构:', {
             fileName: excelDoc.fileName,
             headersCount: excelDoc.headers.length,
             dataRowsCount: excelDoc.data.length,
-            totalRows: excelDoc.totalRows
+            sampleHeader: excelDoc.headers[0],
+            sampleRow: excelDoc.data[0]
         });
 
         const docRef = await db.collection('excel_files').add(excelDoc);
         
-        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${sanitizedRows.length}`);
+        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${processedData.rows.length}`);
         
         if (isAdmin) {
             clearAdminExcelPreview();
@@ -1087,6 +1200,7 @@ async function processExcelFileCommon(isAdmin) {
     } catch (error) {
         console.error('Excel文件上传失败:', error);
         console.error('错误详情:', error.message);
+        console.error('错误堆栈:', error.stack);
         alert('上传失败: ' + error.message);
     } finally {
         showLoading(false);
@@ -1215,16 +1329,27 @@ async function viewExcelFile(fileId) {
                             <thead>
                                 <tr>
                                     ${fileData.headers.map(header => 
-                                        `<th>${sanitizeValue(header) || '未命名列'}</th>`
+                                        `<th>${String(header || '未命名列')}</th>`
                                     ).join('')}
                                 </tr>
                             </thead>
                             <tbody>
                                 ${fileData.data.slice(0, 50).map(row => `
                                     <tr>
-                                        ${fileData.headers.map((_, index) => 
-                                            `<td>${sanitizeValue(row[index]) || ''}</td>`
-                                        ).join('')}
+                                        ${fileData.headers.map((_, index) => {
+                                            const cellValue = row[index];
+                                            let displayValue = '';
+                                            
+                                            if (typeof cellValue === 'string') {
+                                                displayValue = cellValue;
+                                            } else if (cellValue === null || cellValue === undefined) {
+                                                displayValue = '';
+                                            } else {
+                                                displayValue = String(cellValue);
+                                            }
+                                            
+                                            return `<td>${displayValue}</td>`;
+                                        }).join('')}
                                     </tr>
                                 `).join('')}
                                 ${fileData.data.length > 50 ? 
@@ -1408,9 +1533,6 @@ window.processExcelFile = processExcelFile;
 window.processAdminExcelFile = processAdminExcelFile;
 window.clearExcelPreview = clearExcelPreview;
 window.clearAdminExcelPreview = clearAdminExcelPreview;
-window.viewExcelFile = viewExcelFile;
-window.downloadExcelData = downloadExcelData;
-window.deleteExcelFile = deleteExcelFile;
 window.viewExcelFile = viewExcelFile;
 window.downloadExcelData = downloadExcelData;
 window.deleteExcelFile = deleteExcelFile;

@@ -101,7 +101,7 @@ function totallyFlattenData(data) {
     return String(data);
 }
 
-// 专门处理Excel数据的函数 - 确保零嵌套
+// 改进的Excel数据处理函数 - 确保数据完全扁平化
 function processExcelDataForFirestore(excelData) {
     console.log('开始处理Excel数据，原始数据结构:', excelData);
     
@@ -118,26 +118,28 @@ function processExcelDataForFirestore(excelData) {
         }
     }
     
-    // 处理rows - 确保每个单元格都是基本类型
+    // 改进的行数据处理 - 将每行数据转换为对象而不是数组
     const sanitizedRows = [];
     if (Array.isArray(excelData.rows)) {
         for (let rowIndex = 0; rowIndex < excelData.rows.length; rowIndex++) {
             const row = excelData.rows[rowIndex];
-            const sanitizedRow = [];
+            const sanitizedRow = {};
             
             if (Array.isArray(row)) {
-                // 确保行长度与headers一致
+                // 将行数据转换为对象，使用header作为key
                 for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
+                    const headerKey = `col_${colIndex}`;  // 使用索引作为key避免特殊字符
                     const cell = row[colIndex];
                     const flattenedCell = totallyFlattenData(cell);
-                    sanitizedRow.push(flattenedCell);
+                    sanitizedRow[headerKey] = flattenedCell;
                     
                     console.log(`处理单元格[${rowIndex}][${colIndex}]:`, typeof cell, '=>', typeof flattenedCell, flattenedCell);
                 }
             } else {
-                // 如果行不是数组，创建空行
+                // 如果行不是数组，创建空对象
                 for (let colIndex = 0; colIndex < sanitizedHeaders.length; colIndex++) {
-                    sanitizedRow.push('');
+                    const headerKey = `col_${colIndex}`;
+                    sanitizedRow[headerKey] = '';
                 }
             }
             
@@ -148,7 +150,8 @@ function processExcelDataForFirestore(excelData) {
     const processedData = {
         fileName: String(excelData.fileName || '未知文件'),
         headers: sanitizedHeaders,
-        rows: sanitizedRows
+        rows: sanitizedRows,  // 现在是对象数组而不是二维数组
+        totalRows: sanitizedRows.length
     };
     
     console.log('处理后的数据结构验证:', {
@@ -160,15 +163,14 @@ function processExcelDataForFirestore(excelData) {
         rowsLength: processedData.rows.length,
         rowsIsArray: Array.isArray(processedData.rows),
         firstRowType: processedData.rows[0] ? typeof processedData.rows[0] : 'undefined',
-        firstRowIsArray: processedData.rows[0] ? Array.isArray(processedData.rows[0]) : false,
-        firstRowLength: processedData.rows[0] ? processedData.rows[0].length : 0,
-        sampleCellTypes: processedData.rows[0] ? processedData.rows[0].slice(0, 3).map(cell => typeof cell) : []
+        firstRowIsObject: processedData.rows[0] ? (typeof processedData.rows[0] === 'object' && !Array.isArray(processedData.rows[0])) : false,
+        sampleRowStructure: processedData.rows[0] ? Object.keys(processedData.rows[0]).slice(0, 3) : []
     });
     
     return processedData;
 }
 
-// 严格验证数据是否包含嵌套结构
+// 改进的数据验证函数
 function strictValidateFirestoreData(data, path = '') {
     console.log(`验证路径 ${path}:`, typeof data, Array.isArray(data) ? '数组' : '非数组');
     
@@ -183,21 +185,31 @@ function strictValidateFirestoreData(data, path = '') {
                 return false;
             }
             
-            // 检查数组元素是否为对象
+            // 递归检查对象内部
             if (typeof item === 'object' && item !== null) {
-                console.error(`❌ 发现嵌套对象在路径: ${currentPath}`, item);
-                return false;
-            }
-            
-            // 递归检查
-            if (!strictValidateFirestoreData(item, currentPath)) {
-                return false;
+                if (!strictValidateFirestoreData(item, currentPath)) {
+                    return false;
+                }
             }
         }
     } else if (typeof data === 'object' && data !== null) {
         for (const [key, value] of Object.entries(data)) {
-            if (!strictValidateFirestoreData(value, `${path}.${key}`)) {
-                return false;
+            const currentPath = path ? `${path}.${key}` : key;
+            
+            // 检查对象属性值是否为数组
+            if (Array.isArray(value)) {
+                // 只允许基本类型的数组
+                for (let i = 0; i < value.length; i++) {
+                    const arrayItem = value[i];
+                    if (Array.isArray(arrayItem) || (typeof arrayItem === 'object' && arrayItem !== null)) {
+                        console.error(`❌ 发现嵌套结构在数组路径: ${currentPath}[${i}]`, arrayItem);
+                        return false;
+                    }
+                }
+            } else if (typeof value === 'object' && value !== null) {
+                if (!strictValidateFirestoreData(value, currentPath)) {
+                    return false;
+                }
             }
         }
     }
@@ -1167,8 +1179,8 @@ async function processExcelFileCommon(isAdmin) {
         const excelDoc = {
             fileName: processedData.fileName,           // string
             headers: processedData.headers,             // array of strings
-            data: processedData.rows,                   // array of arrays of basic types
-            totalRows: processedData.rows.length,      // number
+            data: processedData.rows,                   // array of objects (not arrays)
+            totalRows: processedData.totalRows,         // number
             uploadedAt: CURRENT_TIME,                   // string
             uploadedBy: currentUser.username,           // string
             fileType: 'excel'                           // string
@@ -1194,7 +1206,7 @@ async function processExcelFileCommon(isAdmin) {
         const docRef = await db.collection('excel_files').add(excelDoc);
         
         console.log('🎉 Excel文件上传成功！文档ID:', docRef.id);
-        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${processedData.rows.length}`);
+        alert(`Excel文件上传成功！\n文件ID: ${docRef.id}\n数据行数: ${processedData.totalRows}`);
         
         if (isAdmin) {
             clearAdminExcelPreview();
@@ -1214,97 +1226,7 @@ async function processExcelFileCommon(isAdmin) {
     }
 }
 
-function clearExcelPreview() {
-    currentExcelData = null;
-    const previewDiv = document.getElementById('excelPreview');
-    const fileInput = document.getElementById('excelFileInput');
-    
-    if (previewDiv) previewDiv.style.display = 'none';
-    if (fileInput) fileInput.value = '';
-}
-
-function clearAdminExcelPreview() {
-    currentExcelData = null;
-    const previewDiv = document.getElementById('adminExcelPreview');
-    const fileInput = document.getElementById('adminExcelFileInput');
-    
-    if (previewDiv) previewDiv.style.display = 'none';
-    if (fileInput) fileInput.value = '';
-}
-
-async function loadUserExcelList() {
-    showLoading(true);
-    try {
-        const snapshot = await db.collection('excel_files')
-            .where('uploadedBy', '==', currentUser.username)
-            .orderBy('uploadedAt', 'desc')
-            .get();
-
-        displayExcelFileList(snapshot, 'userExcelList', false);
-        
-    } catch (error) {
-        console.error('加载Excel文件列表失败:', error);
-    } finally {
-        showLoading(false);
-    }
-}
-
-async function loadAdminExcelList() {
-    showLoading(true);
-    try {
-        const snapshot = await db.collection('excel_files')
-            .orderBy('uploadedAt', 'desc')
-            .get();
-
-        displayExcelFileList(snapshot, 'adminExcelList', true);
-        
-    } catch (error) {
-        console.error('加载Excel文件列表失败:', error);
-    } finally {
-        showLoading(false);
-    }
-}
-
-function displayExcelFileList(snapshot, containerId, isAdmin) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    if (snapshot.empty) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <i class="ri-file-excel-2-line" style="font-size: 48px; color: #666;"></i>
-                <p>暂无Excel文件</p>
-            </div>
-        `;
-        return;
-    }
-
-    const filesHTML = snapshot.docs.map(doc => {
-        const file = doc.data();
-        return `
-            <div class="file-card">
-                <div class="file-header">
-                    <i class="ri-file-excel-2-line" style="color: #28a745; font-size: 24px;"></i>
-                    <span class="file-name">${file.fileName}</span>
-                </div>
-                <div class="file-details">
-                    <p>上传者: ${file.uploadedBy}</p>
-                    <p>数据行数: ${file.totalRows}</p>
-                    <p>上传时间: ${formatDate(file.uploadedAt)}</p>
-                </div>
-                <div class="file-actions">
-                    <button onclick="viewExcelFile('${doc.id}')" class="btn btn-sm btn-primary">查看</button>
-                    <button onclick="downloadExcelData('${doc.id}')" class="btn btn-sm btn-secondary">下载</button>
-                    ${isAdmin || file.uploadedBy === currentUser.username ? 
-                        `<button onclick="deleteExcelFile('${doc.id}')" class="btn btn-sm btn-danger">删除</button>` : ''}
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    container.innerHTML = filesHTML;
-}
-
+// 更新查看文件函数以适应新的数据结构
 async function viewExcelFile(fileId) {
     try {
         const doc = await db.collection('excel_files').doc(fileId).get();
@@ -1344,7 +1266,8 @@ async function viewExcelFile(fileId) {
                                 ${fileData.data.slice(0, 50).map(row => `
                                     <tr>
                                         ${fileData.headers.map((_, index) => {
-                                            const cellValue = row[index];
+                                            const colKey = `col_${index}`;
+                                            const cellValue = row[colKey];
                                             let displayValue = '';
                                             
                                             if (typeof cellValue === 'string') {
@@ -1376,6 +1299,7 @@ async function viewExcelFile(fileId) {
     }
 }
 
+// 更新下载函数以适应新的数据结构
 async function downloadExcelData(fileId) {
     try {
         const doc = await db.collection('excel_files').doc(fileId).get();
@@ -1386,9 +1310,19 @@ async function downloadExcelData(fileId) {
 
         const fileData = doc.data();
         
+        // 将对象数组转换回二维数组格式
+        const wsData = [fileData.headers];
+        fileData.data.forEach(row => {
+            const rowArray = [];
+            fileData.headers.forEach((_, index) => {
+                const colKey = `col_${index}`;
+                rowArray.push(row[colKey] || '');
+            });
+            wsData.push(rowArray);
+        });
+        
         // 创建新的工作簿
         const wb = XLSX.utils.book_new();
-        const wsData = [fileData.headers, ...fileData.data];
         const ws = XLSX.utils.aoa_to_sheet(wsData);
         
         XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
@@ -1400,34 +1334,6 @@ async function downloadExcelData(fileId) {
         console.error('下载失败:', error);
         alert('下载失败: ' + error.message);
     }
-}
-
-async function deleteExcelFile(fileId) {
-    if (!confirm('确定要删除这个Excel文件吗？')) return;
-
-    showLoading(true);
-    try {
-        await db.collection('excel_files').doc(fileId).delete();
-        alert('文件已删除');
-        
-        // 刷新列表
-        if (currentUser.role === 'admin') {
-            await loadAdminExcelList();
-        } else {
-            await loadUserExcelList();
-        }
-
-    } catch (error) {
-        console.error('删除失败:', error);
-        alert('删除失败: ' + error.message);
-    } finally {
-        showLoading(false);
-    }
-}
-
-function handleLogout() {
-    currentUser = null;
-    showLoginForm();
 }
 
 // 标签页切换功能
